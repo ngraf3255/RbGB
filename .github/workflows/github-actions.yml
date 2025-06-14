@@ -31,6 +31,9 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: rbgb-build
+    - name: Display pre-built files
+      run: |
+        ls ${{ github.workspace }} -la
     - name: Pass linter
       run: |
         cargo clippy -- -Dwarnings
