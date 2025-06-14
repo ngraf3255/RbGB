@@ -11,38 +11,25 @@ jobs:
       - name: Display pre-built files
         run: |
           ls ${{ github.workspace }} -la
+      - name: Pass linter
+        run: |
+          cargo clippy -- -Dwarnings
       - name: Compile the rust files
         run: |
-          cargo build
-      - name: Display built files
+          cargo build --all-targets
+      - name: Run unit tests
         run: |
-          ls ${{ github.workspace }}/target/debug
+          cargo test
       - name: Archive code build results
         uses: actions/upload-artifact@v4
         with:
           name: rbgb-build
           path: target/debug/*
 
-  test:
-    needs: [build]
-    runs-on: ubuntu-latest
-    steps:
-    - name: Download a single artifact
-      uses: actions/download-artifact@v4
-      with:
-        name: rbgb-build
-    - name: Display pre-built files
-      run: |
-        ls ${{ github.workspace }} -la
-    - name: Pass linter
-      run: |
-        cargo clippy -- -Dwarnings
-    - name: Run unit tests
-      run: |
-        cargo test
+    
 
   deploy:
-    needs: [test]
+    needs: [build]
     runs-on: ubuntu-latest
     steps:
       - name: Placeholder for deployment to device
