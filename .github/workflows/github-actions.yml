@@ -7,7 +7,7 @@ jobs:
     steps:
       - name: Display pre-built files
         run: |
-          ls ${{ github.workspace }}/rbgb
+          ls ${{ github.workspace }} -la
       - name: Compile the rust files
         run: |
           cargo build --manifest-path ${{ github.workspace}}/rbgb/Cargo.toml
