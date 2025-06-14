@@ -29,4 +29,12 @@ jobs:
         run: |
           cargo test
 
+  deploy:
+    needs: [test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Placeholder for deployment to device
+        run: |
+          echo "TEST :)"
+
 
