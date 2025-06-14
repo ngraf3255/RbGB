@@ -17,20 +17,29 @@ jobs:
       - name: Display built files
         run: |
           ls ${{ github.workspace }}/target/debug
+      - name: Archive code build results
+        uses: actions/upload-artifact@v4
+        with:
+          name: rbgb
+          path: target/debug/*
 
   test:
     needs: [build]
     runs-on: ubuntu-latest
-    steps: 
-      - name: Pass linter
-        run: |
-          cargo clippy -- -Dwarnings
-      - name: Run unit tests
-        run: |
-          cargo test
+    steps:
+    - name: Download a single artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: rbgb-build
+    - name: Pass linter
+      run: |
+        cargo clippy -- -Dwarnings
+    - name: Run unit tests
+      run: |
+        cargo test
 
   deploy:
-    needs: [test]
+    needs: [build]
     runs-on: ubuntu-latest
     steps:
       - name: Placeholder for deployment to device
