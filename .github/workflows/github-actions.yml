@@ -1,18 +1,39 @@
-name: GitHub Actions Demo
-run-name: ${{ github.actor }} is testing out GitHub Actions 🚀
+name: Build Test and deploy
+run-name: ${{ github.actor }} is building and testing the emulator! 🚀
 on: [push]
+env:
+  CARGO_TERM_COLOR: always
 jobs:
-  Explore-GitHub-Actions:
+  build:
     runs-on: ubuntu-latest
     steps:
-      - run: echo "🎉 The job was automatically triggered by a ${{ github.event_name }} event."
-      - run: echo "🐧 This job is now running on a ${{ runner.os }} server hosted by GitHub!"
-      - run: echo "🔎 The name of your branch is ${{ github.ref }} and your repository is ${{ github.repository }}."
-      - name: Check out repository code
-        uses: actions/checkout@v4
-      - run: echo "💡 The ${{ github.repository }} repository has been cloned to the runner."
-      - run: echo "🖥️ The workflow is now ready to test your code on the runner."
-      - name: List files in the repository
+      - uses: actions/checkout@v4
+      - name: Display pre-built files
         run: |
-          ls ${{ github.workspace }}
-      - run: echo "🍏 This job's status is ${{ job.status }}."
+          ls ${{ github.workspace }} -la
+      - name: Pass linter
+        run: |
+          cargo clippy -- -Dwarnings
+      - name: Compile the rust files
+        run: |
+          cargo build --all-targets
+      - name: Run unit tests
+        run: |
+          cargo test
+      - name: Archive code build results
+        uses: actions/upload-artifact@v4
+        with:
+          name: rbgb-build
+          path: target/debug/*
+
+    
+
+  deploy:
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Placeholder for deployment to device
+        run: |
+          echo "TEST :)"
+
+
