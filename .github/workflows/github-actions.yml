@@ -1,10 +1,13 @@
 name: Build Test and deploy
 run-name: ${{ github.actor }} is building and testing the emulator! 🚀
 on: [push]
+env:
+  CARGO_TERM_COLOR: always
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - name: Display pre-built files
         run: |
           ls ${{ github.workspace }} -la
@@ -25,6 +28,5 @@ jobs:
       - name: Run unit tests
         run: |
           cargo test
-
 
 
