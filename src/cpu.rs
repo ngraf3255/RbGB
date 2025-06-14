@@ -21,6 +21,7 @@ pub mod registers {
 
 pub mod instructions {}
 
+#[allow(clippy::upper_case_acronyms)]
 pub struct CPU {
     pub registers: registers::Registers,
     pub memory: [u8; 0x10000], // 64KB address space
