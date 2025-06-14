@@ -10,7 +10,7 @@ jobs:
           ls ${{ github.workspace }}
       - name: Compile the rust files
         run: |
-          cargo  build 
+          cargo build --manifest-path ${{ github.workspace}}
       - name: Display built files
         run: |
           ls ${{ github.workspace }}/target/debug
