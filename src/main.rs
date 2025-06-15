@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 use crate::types::*;
 
+
 mod cpu;
 mod graphics;
 mod sound;
@@ -13,12 +14,16 @@ fn main() {
 }
 
 struct Emulator {
-    cartridge: cartridge_memory,
 }
 
 impl Emulator {
     /// Calls the needed functions once a frame
+    /// 
+    const MAXCYCLES: u32 = 69905;
+
     fn update() {
         let _cycle: Byte = 0;
     }
 }
+
+

@@ -30,5 +30,10 @@ impl Screen {
         unimplemented!()
     }
 
+    pub fn update_screen(&self){
+        //TODO: Create function for updating screen at 60Hz
+        unimplemented!();
+    }
+
     // TODO: Add more methods for drawing, sprites, etc.
 }
