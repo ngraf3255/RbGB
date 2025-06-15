@@ -1,12 +1,16 @@
+use std::ops::BitAnd;
+
 /// Functions and storage for operating on device memory
 use crate::types::*;
 
+#[derive(PartialEq)]
 pub enum RomBankingType {
     MBC1,
     MBC2,
-    NONE,
+    None,
 }
 
+#[derive(Clone, Copy)]
 pub enum CurrentRomBank {
     Bank1 = 1,
     Bank2 = 2,
@@ -14,29 +18,55 @@ pub enum CurrentRomBank {
     Bank4 = 4,
 }
 
+#[derive(Clone, Copy)]
+pub enum CurrentRamBank {
+    Bank0,
+    Bank1,
+    Bank2,
+    Bank3,
+}
+
 pub struct Memory {
     pub mem: Ram,
-    rom_banking: RomBankingType,
+    rom_banking_type: RomBankingType,
+    rom_banks: CurrentRomBank,
+    ram_banks: CurrentRamBank,
+    ram_write_enable: bool,
 }
 
 impl Memory {
     pub fn new() -> Self {
         Memory {
             mem: [0; MEM_SIZE],
-            rom_banking: RomBankingType::NONE,
+            rom_banking_type: RomBankingType::None,
+            rom_banks: CurrentRomBank::Bank1,
+            ram_banks: CurrentRamBank::Bank0,
+            ram_write_enable: false,
         }
     }
 
     // Wrapper for memory read functionality
-    pub fn read_byte(&self, addr: Word) -> u8 {
+    pub fn read_byte(&self, addr: Word) -> Byte {
+        // are we reading from the rom memory bank?
+        if (0x4000..0x7FFF).contains(&addr) {
+            let addr = addr as usize;
+            return self.mem[addr + ((self.rom_banks as usize)*0x4000)] ;
+        }
+
+        else if (0xA000..=0xBFFF).contains(&addr) {
+        // RAM bank storage and indexing
+        let addr = addr as usize;
+        return self.mem[addr + (self.ram_banks as usize) * 0x2000];
+    }
+        // Else return memory
         self.mem[addr as usize]
     }
 
     // Wrapper for memory write functionality
-    pub fn write_byte(&mut self, addr: u16, value: u8) {
+    pub fn write_byte(&mut self, addr: Word, value: Byte) {
         // this is read only memory and should not be written to
         if addr < 0x8000 {
-            //TODO: implement error handling here
+            self.handle_banking(addr, value);
         }
         // echo ram writes to two locations
         else if (0xE000..0xFE00).contains(&addr) {
@@ -51,12 +81,55 @@ impl Memory {
         }
     }
 
+    fn handle_banking(&mut self, addr: Word, value: Byte) {
+
+        // Performs a ram bank change
+        if addr < 0x2000 {
+            if self.rom_banking_type != RomBankingType::None {
+                self.enable_ram_banking(addr, value);
+            }
+        } 
+
+        // Performas a ROM bank change
+        else if (0x2000..0x4000).contains(&addr) {
+            if self.rom_banking_type != RomBankingType::None {
+                self.change_low_rom_banking(value);
+            }
+        }
+
+        // Performs a rom or ram bank change
+        else if (0x4000..0x6000).contains(&addr) {
+
+        }
+    }
+
+    fn enable_ram_banking(&mut self, addr: Word, value: Byte) {
+        if self.rom_banking_type == RomBankingType::MBC2 {
+            if self.read_byte(addr).bitand(0x10) == 0x10 {
+                return;
+            }
+        }
+        // Checks and sets ram enablement
+        if value.bitand(0xF) == 0xA {
+            self.ram_write_enable = true;
+        }else if value.bitand(0xF) == 0x0 {
+            self.ram_write_enable = false;
+        }
+    }
+
+    fn change_low_rom_banking(&mut self, value: Byte) {
+
+    }
+    fn change_high_rom_banking(&mut self, value: Byte) {
+
+    }
+
     /// Returns the rom banking type of the current game
     pub fn identify_banking_type(self) -> RomBankingType {
         match self.read_byte(0x147) {
             1..3 => RomBankingType::MBC1,
             5..6 => RomBankingType::MBC2,
-            _ => RomBankingType::NONE,
+            _ => RomBankingType::None,
         }
     }
 
@@ -104,7 +177,9 @@ mod test {
 
     #[test]
     fn test_mem_startup() {
-        let mem: Memory = Memory::new();
+        let mut mem: Memory = Memory::new();
+
+        mem.ram_startup();
 
         // Selects a couple of memory addresses to check
         assert_eq!(mem.read_byte(0xFF11), 0xBF);
