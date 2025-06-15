@@ -109,13 +109,29 @@ impl CPU {
 
     // Wrapper for memory read functionality
     pub fn read_byte(&self, addr: Word) -> u8 {
+        
         self.device_memory[addr as usize]
         
     }
 
     // Wrapper for memory write functionality
-    pub fn write_byte(&mut self, addr: u16, value: u8) {
-        self.device_memory[addr as usize] = value;
+    pub fn write_byte(&mut self, addr: u16, value: u8) {// this is read only memory and should not be written to
+        if addr < 0x8000 {
+            //TODO: implement error handling here
+        }
+        // echo ram writes to two locations
+        else if ( addr >= 0xE000 ) && (addr < 0xFE00) {
+            self.device_memory[addr as usize] = value;
+            self.write_byte(addr - 0x2000, value);
+
+        }
+        // restricted memory area
+        else if ( addr >= 0xFEA0 ) && ( addr < 0xFEFF ) {
+            //TODO: implement error handling here (likely throw some kind of interrupt)
+        }
+        else {
+            self.device_memory[addr as usize] = value;
+        }
     }
 
     /// Function for setting ram to requred startup values
@@ -176,9 +192,36 @@ mod test{
     #[test]
     fn test_read_write_ram() {
         let mut cpu: CPU = CPU::new();
+        
+        //Writing to valid memory space
+        cpu.write_byte(0xD000, 0x9);
+        assert_eq!(0x9, cpu.read_byte(0xD000));
 
+        //Writing to valid memory space
+        cpu.write_byte(0xD010, 0x9);
+        assert_eq!(0x9, cpu.read_byte(0xD010));
+
+        //Writing to echo memory space
+        cpu.write_byte(0xE000, 0x9);
+        assert_eq!(0x9, cpu.read_byte(0xE000));
+        assert_eq!(0x9, cpu.read_byte(0xE000 - 0x2000));
+
+    }
+
+    #[test]
+    fn test_invalid_write() {
+        let mut cpu: CPU = CPU::new();
+
+        //Writing to invalid memory space
+        cpu.write_byte(0x0, 0x9);
+        assert_ne!(0x9, cpu.read_byte(0x0));
+
+        //Writing to invalid memory space
         cpu.write_byte(0x10, 0x9);
-        assert_eq!(0x9, cpu.read_byte(0x10));
+        assert_ne!(0x9, cpu.read_byte(0x10));
 
+        //Writing to invalid memory space
+        cpu.write_byte(0xFEA0, 0x9);
+        assert_ne!(0x9, cpu.read_byte(0xFEA0));
     }
 }
