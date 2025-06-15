@@ -11,11 +11,22 @@ pub type SignedByte = i8;
 pub type Word = u16;
 pub type SignedWord = i16;
 pub type Cartridge = [Byte; FILESIZE];
+pub type Ram = [Byte; MEM_SIZE];
 
+/// RAM  Device Memory
+pub const MEM_SIZE: usize = 0x10000;
+
+
+
+//Likely at some point will switch the RAM and ROM to be part of the Emulator struct
+
+/// ROM Device memory
 const FILESIZE: usize = 0x20000;
 lazy_static! {
     pub static ref CARTRIDGE_MEMORY: Mutex<Cartridge> = Mutex::new([0; FILESIZE]);
 }
+
+
 
 /// Loads the contents of the given file into the cartridge_memory array.
 /// Returns the number of bytes read or an io::Error.
