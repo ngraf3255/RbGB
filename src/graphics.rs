@@ -3,6 +3,9 @@
 pub struct Screen {
     pub width: usize,
     pub height: usize,
+
+    //buffer is of size (h * w * 3)
+    //buffer can be indexed as (h + (w*3))
     pub buffer: Vec<u8>, // Each pixel is a byte (0-3 for Game Boy palettes)
 }
 
@@ -28,6 +31,11 @@ impl Screen {
     pub fn get_pixel(&self, _x: usize, _y: usize) -> u8 {
         // TODO: Get a pixel from the buffer
         unimplemented!()
+    }
+
+    pub fn update_screen(&self) {
+        //TODO: Create function for updating screen at 60Hz
+        unimplemented!();
     }
 
     // TODO: Add more methods for drawing, sprites, etc.
