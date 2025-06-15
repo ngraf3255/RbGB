@@ -1,6 +1,4 @@
 #![allow(dead_code)]
-use crate::types::*;
-
 mod cpu;
 mod graphics;
 mod sound;
