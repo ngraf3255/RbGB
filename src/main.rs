@@ -49,7 +49,8 @@ impl Emulator {
     }
 
     fn handle_interrupts(&self) {
-
+        //TODO: Handle all the interrupts
+        unimplemented!();
     }
 }
 
