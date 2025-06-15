@@ -3,7 +3,7 @@
 pub struct Screen {
     pub width: usize,
     pub height: usize,
-    
+
     //buffer is of size (h * w * 3)
     //buffer can be indexed as (h + (w*3))
     pub buffer: Vec<u8>, // Each pixel is a byte (0-3 for Game Boy palettes)

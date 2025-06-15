@@ -1,6 +1,8 @@
 #![allow(dead_code)]
+
 mod cpu;
 mod graphics;
+mod mem;
 mod sound;
 mod types;
 
