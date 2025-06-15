@@ -11,13 +11,19 @@ fn main() {
 }
 
 struct Emulator {
-    screen:graphics::Screen,
+    screen: graphics::Screen,
 }
 
 impl Emulator {
     /// Calls the needed functions once a frame
-    /// 
+    ///
     const MAXCYCLES: u32 = 69905;
+
+    pub fn new() -> Self {
+        Emulator {
+            screen: graphics::Screen::new(),
+        }
+    }
 
     pub fn update(&self) {
         let mut num_cycles: u32 = 0;
@@ -31,7 +37,7 @@ impl Emulator {
         self.screen.update_screen();
     }
 
-    fn execute_next_opcode(&self) -> u32{
+    fn execute_next_opcode(&self) -> u32 {
         //TODO: Build opcode execution code
         unimplemented!();
     }
@@ -52,4 +58,14 @@ impl Emulator {
     }
 }
 
+#[cfg(test)]
+mod test {
+    use crate::Emulator;
 
+    #[test]
+    #[should_panic]
+    fn test_unimplemented_main_loop() {
+        let emulator: Emulator = Emulator::new();
+        emulator.update();
+    }
+}

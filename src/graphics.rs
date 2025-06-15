@@ -30,7 +30,7 @@ impl Screen {
         unimplemented!()
     }
 
-    pub fn update_screen(&self){
+    pub fn update_screen(&self) {
         //TODO: Create function for updating screen at 60Hz
         unimplemented!();
     }
