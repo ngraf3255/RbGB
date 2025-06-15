@@ -91,7 +91,8 @@ impl Memory {
             }
         }
         // Now handle whether we are rom banking or ram banking
-        else if (0x6000..0x8000).contains(&addr) && self.rom_banking_type == RomBankingType::MBC1 {
+        else if (0x6000..0x8000).contains(&addr) && self.rom_banking_type == RomBankingType::MBC1
+        {
             self.change_banking_mode(value);
         }
     }
