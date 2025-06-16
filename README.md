@@ -36,6 +36,23 @@ Working on a clearer deployment system, likely by implementing the github releas
 
 - Rust (latest stable)
 
+## Running Tests
+
+To build and run tests locally:
+
+1. Clone the repository:
+
+    ```bash
+    git clone https://github.com/Hyphen325/rbgb.git
+    cd rbgb
+    ```
+
+2. Run the tests:
+
+    ```bash
+    cargo test
+    ```
+
 ## License
 
 MIT
