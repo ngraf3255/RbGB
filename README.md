@@ -56,3 +56,6 @@ To build and run tests locally:
 ## License
 
 MIT
+
+<!--START_SECTION:waka-->
+<!--END_SECTION:waka-->
