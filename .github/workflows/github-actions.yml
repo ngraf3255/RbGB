@@ -7,10 +7,17 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Display pre-built files
-        run: |
-          ls ${{ github.workspace }} -la
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          # Linter uses git history
+          fetch-depth: 0
+      - name: Lint code
+        uses: super-linter/super-linter@v7.4.0
+        env:
+          # Used to report github actions status check
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
       - name: Pass linter
         run: |
           cargo clippy -- -Dwarnings
