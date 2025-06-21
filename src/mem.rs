@@ -2,6 +2,7 @@ use std::ops::BitAnd;
 
 /// Functions and storage for operating on device memory
 use crate::types::*;
+use debug_print::debug_println;
 
 pub struct Memory {
     pub mem: Ram,
@@ -17,10 +18,10 @@ impl Memory {
         Memory {
             mem: [0; MEM_SIZE],
             rom_banking_type: RomBankingType::None,
-            rom_banks: CurrentRomBank::Bank1,
+            rom_banks: CurrentRomBank::Bank(1),
             ram_banks: CurrentRamBank::Bank0,
             ram_write_enable: false,
-            rom_bank_enable: false,
+            rom_bank_enable: true,
         }
     }
 
@@ -28,8 +29,8 @@ impl Memory {
     pub fn read_byte(&self, addr: Word) -> Byte {
         // are we reading from the rom memory bank?
         if (0x4000..0x7FFF).contains(&addr) {
-            let addr = addr as usize;
-            return self.mem[addr + ((self.rom_banks as usize) * 0x4000)];
+            let addr = addr as usize - 0x4000;
+            return self.mem[addr + ((self.rom_banks.value() as usize) * 0x4000)];
         } else if (0xA000..=0xBFFF).contains(&addr) {
             // RAM bank storage and indexing
             let addr = addr as usize;
@@ -63,6 +64,21 @@ impl Memory {
         } else {
             self.mem[addr as usize] = value;
         }
+    }
+
+    ///Wrapper for forced memory writing
+    ///
+    /// Be careful as there are no bounds on providing the wrong mem index
+    fn write_byte_forced(&mut self, addr: Word, value: Byte) {
+        //Sets byte
+        self.mem[addr as usize] = value;
+    }
+
+    ///Wrapper for forced memory reading
+    ///
+    /// Be careful as there are no bounds on providing the wrong mem index
+    fn read_byte_forced(&self, addr: Word) -> Byte {
+        self.mem[addr as usize]
     }
 
     fn handle_banking(&mut self, addr: Word, value: Byte) {
@@ -99,9 +115,7 @@ impl Memory {
 
     fn enable_ram_banking(&mut self, addr: Word, value: Byte) {
         // If the mdoe is MBC2 we don't need to change anything
-        if self.rom_banking_type == RomBankingType::MBC2
-            && self.read_byte(addr).bitand(0x10) == 0x10
-        {
+        if self.rom_banking_type == RomBankingType::MBC2 && addr.bitand(0x10) == 0x10 {
             return;
         }
 
@@ -131,20 +145,23 @@ impl Memory {
 
         //turns off the lower 5 bits of the banking mode
         let lower5: Byte = value & 31;
-        let current = self.rom_banks as u8;
+        let current = self.rom_banks.value();
+        debug_println!("Current Banking Type: {:#?}", current);
+        debug_println!("Maked Lower 5: {:#?}", lower5);
         let masked = (current & 224) | lower5;
+        debug_println!("Post Banking Type: {:#?}", masked);
         self.rom_banks = CurrentRomBank::from(masked);
-        if self.rom_banks == CurrentRomBank::Bank0 {
-            self.rom_banks = CurrentRomBank::Bank1;
+        if self.rom_banks == CurrentRomBank::Bank(0) {
+            self.rom_banks = CurrentRomBank::Bank(1);
         }
     }
     fn change_high_rom_banking(&mut self, value: Byte) {
         //turns off the upper 3 bits of the banks and the lower 5 of the data
-        let current = self.rom_banks as u8;
+        let current = self.rom_banks.value();
         let masked = (current & 31) | (value & 224);
         self.rom_banks = CurrentRomBank::from(masked);
-        if self.rom_banks == CurrentRomBank::Bank0 {
-            self.rom_banks = CurrentRomBank::Bank1;
+        if self.rom_banks == CurrentRomBank::Bank(0) {
+            self.rom_banks = CurrentRomBank::Bank(1);
         }
     }
 
@@ -204,14 +221,26 @@ impl Memory {
         self.mem[0xFF4A] = 0x00;
         self.mem[0xFF4B] = 0x00;
         self.mem[0xFFFF] = 0x00;
+        self.refresh_rom_banking_type();
+    }
+
+    /// Checks to get the current rom banking type
+    pub fn refresh_rom_banking_type(&mut self) {
+        match self.read_byte_forced(0x147) {
+            1..=3 => self.rom_banking_type = RomBankingType::MBC1,
+            5..=6 => self.rom_banking_type = RomBankingType::MBC2,
+            _ => self.rom_banking_type = RomBankingType::None,
+        }
     }
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
+    use ntest::timeout;
 
     #[test]
+    #[timeout(10)]
     fn test_mem_startup() {
         let mut mem: Memory = Memory::new();
 
@@ -224,6 +253,7 @@ mod test {
     }
 
     #[test]
+    #[timeout(10)]
     fn test_read_write_ram() {
         let mut mem: Memory = Memory::new();
 
@@ -242,6 +272,7 @@ mod test {
     }
 
     #[test]
+    #[timeout(10)]
     fn test_invalid_write() {
         let mut mem: Memory = Memory::new();
 
@@ -256,5 +287,116 @@ mod test {
         //Writing to invalid memory space
         mem.write_byte(0xFEA0, 0x9);
         assert_ne!(0x9, mem.read_byte(0xFEA0));
+    }
+
+    #[test]
+    #[timeout(10)]
+    fn test_echo_mem() {
+        let mut mem: Memory = Memory::new();
+
+        //Writing to echo mem space
+        mem.write_byte(0xE000, 0x9);
+        assert_eq!(0x9, mem.read_byte(0xE000));
+        assert_eq!(0x9, mem.read_byte(0xE000 - 0x2000));
+
+        mem.write_byte(0xF100, 0x8);
+        assert_eq!(0x8, mem.read_byte(0xF100));
+        assert_eq!(0x8, mem.read_byte(0xF100 - 0x2000));
+    }
+
+    #[test]
+    #[timeout(1)]
+    fn test_enabling_ram() {
+        let mut mem: Memory = Memory::new();
+        mem.ram_startup();
+
+        //Sets MBC1
+        mem.write_byte_forced(0x147, 1);
+        mem.refresh_rom_banking_type();
+        assert_eq!(mem.rom_banking_type, RomBankingType::MBC1);
+
+        mem.write_byte(0x1, 0xA);
+        println!("{}", mem.ram_write_enable);
+        assert!(mem.ram_write_enable);
+
+        mem.write_byte(0x1, 0x0);
+        println!("{}", mem.ram_write_enable);
+        assert!(!mem.ram_write_enable);
+    }
+
+    #[test]
+    #[timeout(1)]
+    fn test_mbc1() {
+        let mut mem: Memory = Memory::new();
+        mem.ram_startup();
+
+        //Sets MBC1
+        mem.write_byte_forced(0x147, 1);
+        mem.refresh_rom_banking_type();
+        assert_eq!(mem.rom_banking_type, RomBankingType::MBC1);
+
+        //Turn ram banks on
+        mem.write_byte(0x1, 0xA);
+        println!("{}", mem.ram_write_enable);
+        assert!(mem.ram_write_enable);
+
+        //Turn ram banks off
+        mem.write_byte(0x1, 0x0);
+        println!("{}", mem.ram_write_enable);
+        assert!(!mem.ram_write_enable);
+
+        //Change rom bank
+        debug_println!("\nCORRECTLY SET BANKS");
+        mem.write_byte(0x2001, 0x0);
+        assert_eq!(mem.rom_banks, CurrentRomBank::Bank(1));
+        mem.write_byte(0x2001, 0x1);
+        assert_eq!(mem.rom_banks, CurrentRomBank::Bank(1));
+        mem.write_byte(0x2001, 0x2);
+        assert_eq!(mem.rom_banks, CurrentRomBank::Bank(2));
+        mem.write_byte(0x2001, 0x3);
+        assert_eq!(mem.rom_banks, CurrentRomBank::Bank(3));
+
+        //Turn on ROM banking
+        mem.write_byte(0x6000, 0);
+        assert!(mem.rom_bank_enable);
+        assert_eq!(mem.ram_banks, CurrentRamBank::Bank0);
+        mem.write_byte(0x4001, 0x20);
+        assert_eq!(mem.rom_banks, CurrentRomBank::Bank(35));
+
+        //Test banking set failure
+        debug_println!("\nINCORRECTLY SET BANKS");
+        mem.write_byte(0x2001, 0x40);
+        assert_eq!(mem.rom_banks, CurrentRomBank::Bank(32));
+
+        //Turn on RAM Banking
+        mem.write_byte(0x6000, 1);
+        assert!(!mem.rom_bank_enable);
+        assert_eq!(mem.ram_banks, CurrentRamBank::Bank0);
+        mem.write_byte(0x4000, 0x2);
+        assert_eq!(mem.ram_banks, CurrentRamBank::Bank2);
+    }
+
+    #[test]
+    #[timeout(1)]
+    fn test_mbc2() {
+        let mut mem: Memory = Memory::new();
+        mem.ram_startup();
+
+        //Sets MBC1
+        mem.write_byte_forced(0x147, 5);
+        mem.refresh_rom_banking_type();
+        assert_eq!(mem.rom_banking_type, RomBankingType::MBC2);
+
+        mem.write_byte(0x1, 0xA);
+        println!("{}", mem.ram_write_enable);
+        assert!(mem.ram_write_enable);
+
+        mem.write_byte(0x1, 0x0);
+        println!("{}", mem.ram_write_enable);
+        assert!(!mem.ram_write_enable);
+
+        mem.write_byte(0x11, 0xA);
+        println!("{}", mem.ram_write_enable);
+        assert!(!mem.ram_write_enable);
     }
 }
