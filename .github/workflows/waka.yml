@@ -19,7 +19,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }} # optional if on profile readme
           WAKATIME_API_KEY: ${{ secrets.WAKATIME_API_KEY }} # required
           ### meta
-          REPOSITORY: hyphen325/rbgb # optional
+          REPOSITORY: Hyphen325/RbGB # optional
           ### content
           SHOW_TITLE: true # optional
           SECTION_NAME: waka # optional
