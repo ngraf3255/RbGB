@@ -57,6 +57,8 @@ To build and run tests locally:
 
 MIT
 
+## Coding Statistics
+
 <!--START_SECTION:waka-->
 
 ```rust
