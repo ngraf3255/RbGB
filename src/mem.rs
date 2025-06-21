@@ -67,7 +67,7 @@ impl Memory {
     }
 
     ///Wrapper for forced memory writing
-    /// 
+    ///
     /// Be careful as there are no bounds on providing the wrong mem index
     fn write_byte_forced(&mut self, addr: Word, value: Byte) {
         //Sets byte
@@ -75,10 +75,10 @@ impl Memory {
     }
 
     ///Wrapper for forced memory reading
-    /// 
+    ///
     /// Be careful as there are no bounds on providing the wrong mem index
     fn read_byte_forced(&self, addr: Word) -> Byte {
-        return self.mem[addr as usize];
+        self.mem[addr as usize]
     }
 
     fn handle_banking(&mut self, addr: Word, value: Byte) {
@@ -115,9 +115,7 @@ impl Memory {
 
     fn enable_ram_banking(&mut self, addr: Word, value: Byte) {
         // If the mdoe is MBC2 we don't need to change anything
-        if self.rom_banking_type == RomBankingType::MBC2
-            && addr.bitand(0x10) == 0x10
-        {
+        if self.rom_banking_type == RomBankingType::MBC2 && addr.bitand(0x10) == 0x10 {
             return;
         }
 
@@ -304,7 +302,6 @@ mod test {
         mem.write_byte(0xF100, 0x8);
         assert_eq!(0x8, mem.read_byte(0xF100));
         assert_eq!(0x8, mem.read_byte(0xF100 - 0x2000));
-
     }
 
     #[test]
@@ -322,11 +319,9 @@ mod test {
         println!("{}", mem.ram_write_enable);
         assert!(mem.ram_write_enable);
 
-
         mem.write_byte(0x1, 0x0);
         println!("{}", mem.ram_write_enable);
         assert!(!mem.ram_write_enable);
-
     }
 
     #[test]
@@ -379,7 +374,6 @@ mod test {
         assert_eq!(mem.ram_banks, CurrentRamBank::Bank0);
         mem.write_byte(0x4000, 0x2);
         assert_eq!(mem.ram_banks, CurrentRamBank::Bank2);
-
     }
 
     #[test]
@@ -396,7 +390,6 @@ mod test {
         mem.write_byte(0x1, 0xA);
         println!("{}", mem.ram_write_enable);
         assert!(mem.ram_write_enable);
-
 
         mem.write_byte(0x1, 0x0);
         println!("{}", mem.ram_write_enable);
