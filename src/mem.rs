@@ -1,16 +1,23 @@
-use std::ops::BitAnd;
+use std::{
+    ops::BitAnd,
+    sync::{Arc, Mutex},
+};
 
 /// Functions and storage for operating on device memory
 use crate::types::*;
 use debug_print::debug_println;
 
+pub type SharedMemory = Arc<Mutex<Memory>>;
+
 pub struct Memory {
-    pub mem: Ram,
+    mem: Ram,
     rom_banking_type: RomBankingType,
     rom_banks: CurrentRomBank,
     ram_banks: CurrentRamBank,
     ram_write_enable: bool,
     rom_bank_enable: bool,
+
+    pub timer_counter: i32,
 }
 
 impl Memory {
@@ -22,6 +29,8 @@ impl Memory {
             ram_banks: CurrentRamBank::Bank0,
             ram_write_enable: false,
             rom_bank_enable: true,
+
+            timer_counter: 1024,
         }
     }
 
@@ -61,6 +70,17 @@ impl Memory {
         // restricted memory area
         else if (0xFEA0..0xFEFF).contains(&addr) {
             //TODO: implement error handling here (likely throw some kind of interrupt)
+        } else if TMC == addr {
+            let current_frequency: Byte = self.get_clock_freq();
+            self.mem[TMC as usize] = value;
+            let new_frequency = self.get_clock_freq();
+
+            if current_frequency != new_frequency {
+                self.set_clock_frequency();
+            }
+        } else if DIVIDER_REGISTER == addr {
+            // If ever writing to the divider register always set it to 0
+            self.mem[DIVIDER_REGISTER as usize] = 0;
         } else {
             self.mem[addr as usize] = value;
         }
@@ -69,7 +89,7 @@ impl Memory {
     ///Wrapper for forced memory writing
     ///
     /// Be careful as there are no bounds on providing the wrong mem index
-    fn write_byte_forced(&mut self, addr: Word, value: Byte) {
+    pub fn write_byte_forced(&mut self, addr: Word, value: Byte) {
         //Sets byte
         self.mem[addr as usize] = value;
     }
@@ -77,8 +97,29 @@ impl Memory {
     ///Wrapper for forced memory reading
     ///
     /// Be careful as there are no bounds on providing the wrong mem index
-    fn read_byte_forced(&self, addr: Word) -> Byte {
+    pub fn read_byte_forced(&self, addr: Word) -> Byte {
         self.mem[addr as usize]
+    }
+
+    /// Reads TMC memory location to get current clock frequency
+    ///
+    /// Selects bits 0 and 1 to map to a frequency value
+    pub fn get_clock_freq(&self) -> Byte {
+        return self.read_byte(TMC) & 0x3;
+    }
+
+    /// Sets the timer_counter to the current clock frequency
+    pub fn set_clock_frequency(&mut self) {
+        let frequency = self.get_clock_freq();
+
+        // Magic numbers again frome from val of CLOCKSPEED / frequency
+        match frequency {
+            0 => self.timer_counter = 1024, // freq = 4096
+            1 => self.timer_counter = 16,   // freq = 262144
+            2 => self.timer_counter = 64,   // freq = 65536
+            3 => self.timer_counter = 256,  // freq = 16382
+            _ => self.timer_counter = 1024, // default
+        }
     }
 
     fn handle_banking(&mut self, addr: Word, value: Byte) {

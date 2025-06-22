@@ -53,9 +53,10 @@ To build and run tests locally:
     cargo test
     ```
 
-## License
+## Outstanding Work
 
-MIT
+- Implement handling of poisoned Mutexes
+- Implement full multithreading
 
 ## Coding Statistics
 
@@ -71,3 +72,7 @@ Markdown   7 mins          ████░░░░░░░░░░░░░�
 ```
 
 <!--END_SECTION:waka-->
+
+## License
+
+MIT

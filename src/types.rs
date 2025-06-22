@@ -13,6 +13,13 @@ pub type SignedWord = i16;
 pub type Cartridge = [Byte; FILESIZE];
 pub type Ram = [Byte; MEM_SIZE];
 
+// Timer and CPU constants
+pub const TIMA: Word = 0xFF05;
+pub const TMA: Word = 0xFF06;
+pub const TMC: Word = 0xFF07;
+pub const DIVIDER_REGISTER: Word = 0xFF04;
+pub const CLOCKSPEED: u32 = 4194304;
+
 /// RAM  Device Memory
 pub const MEM_SIZE: usize = 0x10000;
 
