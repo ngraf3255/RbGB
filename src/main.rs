@@ -67,7 +67,7 @@ mod test {
     #[test]
     #[should_panic]
     fn test_unimplemented_main_loop() {
-        let emulator: Emulator = Emulator::new();
+        let mut emulator: Emulator = Emulator::new();
         emulator.update();
     }
 }
