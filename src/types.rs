@@ -12,6 +12,7 @@ pub type Word = u16;
 pub type SignedWord = i16;
 pub type Cartridge = [Byte; FILESIZE];
 pub type Ram = [Byte; MEM_SIZE];
+#[allow(clippy::upper_case_acronyms)]
 pub type LCD = [Byte; (SCREEN_HEIGHT * SCREEN_WIDTH * 3) as usize];
 
 // Timer and CPU constants

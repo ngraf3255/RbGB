@@ -78,7 +78,7 @@ impl Screen {
     }
 
     fn draw_scanline(&mut self) {
-
+        
     }
 
     fn set_lcd_status(&self) {

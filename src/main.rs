@@ -27,7 +27,7 @@ impl Emulator {
         }
     }
 
-    pub fn update(&self) {
+    pub fn update(&mut self) {
         let mut num_cycles: u32 = 0;
         while num_cycles < Self::MAXCYCLES {
             let cycles: u32 = self.execute_next_opcode();
@@ -36,7 +36,7 @@ impl Emulator {
             self.update_graphics();
             self.handle_interrupts();
         }
-        self.screen.update_screen(num_cycles);
+        self.screen.update_screen(0);
     }
 
     fn execute_next_opcode(&self) -> u32 {
