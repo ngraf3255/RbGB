@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+use registers::Register;
+
 use crate::mem::*;
 use crate::types::*;
 use std::sync::{Arc, Mutex};
@@ -20,19 +22,32 @@ pub mod registers {
     }
 
     pub struct Registers {
-        reg_af: Register,
-        reg_bc: Register,
-        reg_de: Register,
-        reg_hl: Register,
-        reg_sp: Register, // Stack pointer
-        reg_pc: Register, // Program counter
+        pub reg_af: Register,
+        pub reg_bc: Register,
+        pub reg_de: Register,
+        pub reg_hl: Register,
+        pub reg_sp: Register, // Stack pointer
+        pub reg_pc: Register, // Program counter
     }
 
     // reg is the comination of the base registers
     // bitspace lets you select upper 8 bits or lower for indiv regs
-    union Register {
+    #[derive(Copy, Clone)]
+    pub union Register {
         reg: Word,
         bitspace: BitSpace,
+    }
+
+    impl Register {
+        pub fn new(val: Word) -> Self {
+            Register {
+                reg: val,
+            }
+        }
+
+        pub fn set(&mut self, val: Word) {
+            self.reg = val;
+        }
     }
 
     // Would it be best to not make a reg struct and implement new for it
@@ -75,7 +90,7 @@ impl CPU {
         // Creates new mem object on the heap
         let mem = Arc::new(Mutex::new(Memory::new()));
 
-        let mut cpu = CPU {
+        let cpu = CPU {
             registers: registers::Registers::new(),
             device_memory: Arc::clone(&mem),
             timers: Timer::new(Arc::clone(&mem)),
@@ -107,8 +122,57 @@ impl CPU {
 
     // Placeholder for interrupt handling
     pub fn handle_interrupts(&mut self) {
-        // TODO: Implement interrupt handling
+        // Checks interrupt master enable
+        if self.ime {
+            // Aquire lock on memory
+            let mem = self.device_memory.lock().unwrap();
+
+            let request = mem.read_byte(IF);
+            let enabled = mem.read_byte(IE);
+            drop(mem); // Memory is dropped after all reads are done
+
+            if request != 0 {
+                for i in 0..5 {
+                    let req_bit = (request >> i) & 1 != 0;
+                    let ena_bit = (enabled >> i) & 1 != 0;
+                    if req_bit && ena_bit{
+                        self.service_interrupt(i);
+                    }
+                }
+            }
+        }
+    }
+
+    fn service_interrupt(&mut self, interrupt: Byte) {
+        // New lock aquired on memory
+        let mut mem = self.device_memory.lock().unwrap(); 
+
+        self.ime = false; // Disables new interrupts
+        let mut request = mem.read_byte(IF);
+        request = request & (!(2^interrupt)); // Clears interrupt
+        mem.write_byte(IF, request);
+
+        drop(mem); // Drops memory since we are done writing
+
+        // Save current execution location on stack
+        self.push_stack(self.registers.reg_pc);
+
+        // Set the program counter to the address of the ISRs
+        match interrupt {
+            0 => self.registers.reg_pc.set(0x40),
+            1 => self.registers.reg_pc.set(0x48),
+            2 => self.registers.reg_pc.set(0x50),
+            4 => self.registers.reg_pc.set(0x60),
+            _ => self.registers.reg_pc.set(0x40),
+        }
+
         unimplemented!();
+    }
+
+    /// Pushes the provided register onto the stack
+    fn push_stack(&self, reg: registers::Register) {
+        unimplemented!()
+
     }
 }
 
@@ -149,8 +213,7 @@ impl Timer {
                     let tma_val = mem.read_byte(TMA);
                     mem.write_byte(TIMA, tma_val);
                     // We are done accessing memory so we drop the lock
-                    drop(mem);
-                    self.request_interrupt(2);
+                    mem.request_interrupt(2);
                 } else {
                     // Incriments timer
                     let tima_val = mem.read_byte(TIMA) + 1;
@@ -178,16 +241,21 @@ impl Timer {
         let mem = self.mem.lock().unwrap();
         let tmc_reg = mem.read_byte(TMC);
         // Test bit 2
-        return tmc_reg & 0x4 != 0;
-    }
-
-    fn request_interrupt(&mut self, interrupt: i32) {
-        unimplemented!();
+        tmc_reg & 0x4 != 0
     }
 }
 
 #[cfg(test)]
 mod test {
 
-    //use super::*;
+    use super::*;
+    use ntest::timeout;
+
+    #[test]
+    #[timeout(1)]
+    fn test_cpu_init() {
+        let cpu = CPU::new();
+
+        assert_eq!(cpu.cycles, 0);
+    }
 }

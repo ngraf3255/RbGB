@@ -105,7 +105,7 @@ impl Memory {
     ///
     /// Selects bits 0 and 1 to map to a frequency value
     pub fn get_clock_freq(&self) -> Byte {
-        return self.read_byte(TMC) & 0x3;
+        self.read_byte(TMC) & 0x3
     }
 
     /// Sets the timer_counter to the current clock frequency
@@ -272,6 +272,13 @@ impl Memory {
             5..=6 => self.rom_banking_type = RomBankingType::MBC2,
             _ => self.rom_banking_type = RomBankingType::None,
         }
+    }
+
+    /// Requests an interrupt for the CPU to handle
+    pub fn request_interrupt(&mut self, interrupt: Byte) {
+        let mut request = self.read_byte(IF);
+        request |= interrupt; // Sets the bit of the request
+        self.write_byte(IF, request);
     }
 }
 

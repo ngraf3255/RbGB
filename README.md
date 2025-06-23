@@ -57,6 +57,7 @@ To build and run tests locally:
 
 - Implement handling of poisoned Mutexes
 - Implement full multithreading
+- Modify register system to allow them to be set more gracefully
 
 ## Coding Statistics
 

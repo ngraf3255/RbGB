@@ -20,6 +20,10 @@ pub const TMC: Word = 0xFF07;
 pub const DIVIDER_REGISTER: Word = 0xFF04;
 pub const CLOCKSPEED: u32 = 4194304;
 
+// Interrupt Constants
+pub const IE: Word = 0xFFFF; // Interrupt enabled register
+pub const IF: Word = 0xFF0F; // Interrupt request register
+
 /// RAM  Device Memory
 pub const MEM_SIZE: usize = 0x10000;
 
