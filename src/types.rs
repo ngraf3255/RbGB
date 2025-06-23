@@ -12,6 +12,25 @@ pub type Word = u16;
 pub type SignedWord = i16;
 pub type Cartridge = [Byte; FILESIZE];
 pub type Ram = [Byte; MEM_SIZE];
+#[allow(clippy::upper_case_acronyms)]
+pub type LCD = [Byte; (SCREEN_HEIGHT * SCREEN_WIDTH * 3) as usize];
+
+// Timer and CPU constants
+pub const TIMA: Word = 0xFF05;
+pub const TMA: Word = 0xFF06;
+pub const TMC: Word = 0xFF07;
+pub const DIVIDER_REGISTER: Word = 0xFF04;
+pub const CLOCKSPEED: u32 = 4194304;
+
+// Interrupt Constants
+pub const IE: Word = 0xFFFF; // Interrupt enabled register
+pub const IF: Word = 0xFF0F; // Interrupt request register
+
+// Screen Constants
+pub const SCREEN_HEIGHT: u32 = 144;
+pub const SCREEN_WIDTH: u32 = 160;
+pub const CURRENT_SCANLINE: Word = 0xFF44;
+pub const LCD_STATUS: Word = 0xFF41;
 
 /// RAM  Device Memory
 pub const MEM_SIZE: usize = 0x10000;
