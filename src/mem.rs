@@ -278,7 +278,16 @@ impl Memory {
     pub fn request_interrupt(&mut self, interrupt: Byte) {
         let mut request = self.read_byte(IF);
         request |= interrupt; // Sets the bit of the request
+        debug_println!("Writing Interrupt {}", request);
         self.write_byte(IF, request);
+    }
+
+    /// Enables an interrupt for the CPU to handle
+    pub fn enable_interrupt(&mut self, interrupt: Byte) {
+        let mut request = self.read_byte(IF);
+        request |= interrupt; // Sets the bit of the request
+        debug_println!("Enabling Interrupt {}", request);
+        self.write_byte(IE, request);
     }
 }
 

@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use registers::Register;
+use debug_print::debug_println;
 
 use crate::mem::*;
 use crate::types::*;
@@ -40,13 +40,40 @@ pub mod registers {
 
     impl Register {
         pub fn new(val: Word) -> Self {
-            Register {
-                reg: val,
-            }
+            Register { reg: val }
         }
 
         pub fn set(&mut self, val: Word) {
             self.reg = val;
+        }
+
+        /// Returns the value in the register
+        pub fn value(&self) -> Word {
+            unsafe { self.reg }
+        }
+
+        /// Gets the upper 4 bits
+        pub fn high_value(&self) -> Byte {
+            unsafe { self.bitspace.hi }
+        }
+
+        /// Gets the lower 4 bits
+        pub fn low_value(&self) -> Byte {
+            unsafe { self.bitspace.lo }
+        }
+
+        /// Decriments the register
+        pub fn decriment(&mut self) {
+            unsafe {
+                self.reg -= 1;
+            }
+        }
+
+        ///Incriments the register
+        pub fn incriment(&mut self) {
+            unsafe {
+                self.reg += 1;
+            }
         }
     }
 
@@ -95,7 +122,7 @@ impl CPU {
             device_memory: Arc::clone(&mem),
             timers: Timer::new(Arc::clone(&mem)),
             halted: false,
-            ime: false,
+            ime: true,
             cycles: 0,
         };
 
@@ -129,13 +156,14 @@ impl CPU {
 
             let request = mem.read_byte(IF);
             let enabled = mem.read_byte(IE);
-            drop(mem); // Memory is dropped after all reads are done
+            drop(mem); // Memory lock is dropped after all reads are done
 
             if request != 0 {
+                debug_println!("Interrupt Requested");
                 for i in 0..5 {
                     let req_bit = (request >> i) & 1 != 0;
                     let ena_bit = (enabled >> i) & 1 != 0;
-                    if req_bit && ena_bit{
+                    if req_bit && ena_bit {
                         self.service_interrupt(i);
                     }
                 }
@@ -145,16 +173,18 @@ impl CPU {
 
     fn service_interrupt(&mut self, interrupt: Byte) {
         // New lock aquired on memory
-        let mut mem = self.device_memory.lock().unwrap(); 
+        let mut mem = self.device_memory.lock().unwrap();
 
+        debug_println!("Servicing interrupt {}", interrupt);
         self.ime = false; // Disables new interrupts
         let mut request = mem.read_byte(IF);
-        request = request & (!(2^interrupt)); // Clears interrupt
+        request &= !(2 ^ interrupt); // Clears interrupt
         mem.write_byte(IF, request);
 
         drop(mem); // Drops memory since we are done writing
 
         // Save current execution location on stack
+        debug_println!("Pushing PC on stack: {:#X}", self.registers.reg_pc.value());
         self.push_stack(self.registers.reg_pc);
 
         // Set the program counter to the address of the ISRs
@@ -165,14 +195,33 @@ impl CPU {
             4 => self.registers.reg_pc.set(0x60),
             _ => self.registers.reg_pc.set(0x40),
         }
-
-        unimplemented!();
     }
 
     /// Pushes the provided register onto the stack
-    fn push_stack(&self, reg: registers::Register) {
-        unimplemented!()
+    ///
+    /// Careful that this is called after all registers are initialized
+    fn push_stack(&mut self, reg: registers::Register) {
+        let mut mem = self.device_memory.lock().unwrap();
+        // Decriments the stack pointer by one byte
+        self.registers.reg_sp.decriment();
+        mem.write_byte(self.registers.reg_sp.value(), reg.high_value());
 
+        self.registers.reg_sp.decriment();
+        mem.write_byte(self.registers.reg_sp.value(), reg.low_value());
+        drop(mem);
+    }
+
+    /// Pops from the top of the stack
+    fn pop_stack(&mut self) -> Word {
+        let mem = self.device_memory.lock().unwrap();
+
+        let mut return_word: Word = (mem.read_byte(self.registers.reg_sp.value() + 1) as Word) << 8;
+        return_word |= mem.read_byte(self.registers.reg_sp.value()) as Word;
+
+        self.registers.reg_sp.incriment();
+        self.registers.reg_sp.incriment();
+
+        return_word
     }
 }
 
@@ -257,5 +306,37 @@ mod test {
         let cpu = CPU::new();
 
         assert_eq!(cpu.cycles, 0);
+    }
+
+    #[test]
+    #[timeout(1)]
+    fn test_cpu_interrupts() {
+        let mut cpu = CPU::new();
+
+        assert_eq!(cpu.cycles, 0);
+        assert!(cpu.ime);
+
+        let mut mem = cpu.device_memory.lock().unwrap();
+        mem.request_interrupt(1); // Request vblank interrupt
+        mem.enable_interrupt(1); // Enabled interrupt
+        assert_eq!(mem.read_byte(IF), 0x1);
+        drop(mem);
+        cpu.handle_interrupts();
+
+        let ret = cpu.pop_stack();
+        assert_eq!(ret, 0x100);
+    }
+
+    #[test]
+    #[timeout(1)]
+    fn test_push_pop_stack() {
+        let mut cpu = CPU::new();
+
+        cpu.push_stack(cpu.registers.reg_af);
+        assert_eq!(cpu.registers.reg_sp.value(), 0xFFFC);
+
+        let ret = cpu.pop_stack();
+        assert_eq!(ret, 0x01B0);
+        assert_eq!(cpu.registers.reg_sp.value(), 0xFFFE);
     }
 }
