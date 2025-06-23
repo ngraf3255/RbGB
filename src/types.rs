@@ -31,6 +31,10 @@ pub const SCREEN_HEIGHT: u32 = 144;
 pub const SCREEN_WIDTH: u32 = 160;
 pub const CURRENT_SCANLINE: Word = 0xFF44;
 pub const LCD_STATUS: Word = 0xFF41;
+pub const LCD_CONTROL: Word = 0xFF40;
+pub const COINCIDENCE_FLAG: Word = 0xFF45;
+pub const MODE_2_BOUNDS: i32 = 456 - 80;
+pub const MODE_3_BOUNDS: i32 = MODE_2_BOUNDS - 172;
 
 /// RAM  Device Memory
 pub const MEM_SIZE: usize = 0x10000;

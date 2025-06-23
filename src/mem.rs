@@ -84,7 +84,6 @@ impl Memory {
         } else if DIVIDER_REGISTER == addr {
             // If ever writing to the divider register always set it to 0
             self.mem[DIVIDER_REGISTER as usize] = 0;
-
         } else if addr == CURRENT_SCANLINE {
             // If ever writing to the current scanline always set it to 0
             self.mem[CURRENT_SCANLINE as usize] = 0;
