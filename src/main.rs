@@ -36,7 +36,7 @@ impl Emulator {
             self.update_graphics();
             self.handle_interrupts();
         }
-        self.screen.update_screen();
+        self.screen.update_screen(num_cycles);
     }
 
     fn execute_next_opcode(&self) -> u32 {

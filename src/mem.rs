@@ -39,14 +39,17 @@ impl Memory {
         // are we reading from the rom memory bank?
         if (0x4000..0x7FFF).contains(&addr) {
             let addr = addr as usize - 0x4000;
-            return self.mem[addr + ((self.rom_banks.value() as usize) * 0x4000)];
+
+            self.mem[addr + ((self.rom_banks.value() as usize) * 0x4000)]
         } else if (0xA000..=0xBFFF).contains(&addr) {
             // RAM bank storage and indexing
             let addr = addr as usize;
-            return self.mem[addr + (self.ram_banks as usize) * 0x2000];
+
+            self.mem[addr + (self.ram_banks as usize) * 0x2000]
+        } else {
+            // Else return memory
+            self.mem[addr as usize]
         }
-        // Else return memory
-        self.mem[addr as usize]
     }
 
     // Wrapper for memory write functionality
@@ -81,6 +84,10 @@ impl Memory {
         } else if DIVIDER_REGISTER == addr {
             // If ever writing to the divider register always set it to 0
             self.mem[DIVIDER_REGISTER as usize] = 0;
+
+        } else if addr == CURRENT_SCANLINE {
+            // If ever writing to the current scanline always set it to 0
+            self.mem[CURRENT_SCANLINE as usize] = 0;
         } else {
             self.mem[addr as usize] = value;
         }
@@ -277,7 +284,7 @@ impl Memory {
     /// Requests an interrupt for the CPU to handle
     pub fn request_interrupt(&mut self, interrupt: Byte) {
         let mut request = self.read_byte(IF);
-        request |= interrupt; // Sets the bit of the request
+        request |= interrupt << 1; // Sets the bit of the request
         debug_println!("Writing Interrupt {}", request);
         self.write_byte(IF, request);
     }
@@ -285,7 +292,7 @@ impl Memory {
     /// Enables an interrupt for the CPU to handle
     pub fn enable_interrupt(&mut self, interrupt: Byte) {
         let mut request = self.read_byte(IF);
-        request |= interrupt; // Sets the bit of the request
+        request |= interrupt << 1; // Sets the bit of the request
         debug_println!("Enabling Interrupt {}", request);
         self.write_byte(IE, request);
     }
