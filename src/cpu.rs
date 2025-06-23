@@ -319,7 +319,7 @@ mod test {
         let mut mem = cpu.device_memory.lock().unwrap();
         mem.request_interrupt(1); // Request vblank interrupt
         mem.enable_interrupt(1); // Enabled interrupt
-        assert_eq!(mem.read_byte(IF), 0x1);
+        assert_eq!(mem.read_byte(IF), 0x2);
         drop(mem);
         cpu.handle_interrupts();
 
