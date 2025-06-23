@@ -62,12 +62,12 @@ MIT
 <!--START_SECTION:waka-->
 
 ```rust
-From: 18 June 2025 - To: 21 June 2025
+From: 18 June 2025 - To: 22 June 2025
 
-Total Time: 42 mins
+Total Time: 1 hr 52 mins
 
-Rust       9 mins          █████▓░░░░░░░░░░░░░░░░░░░   23.18 %
-Markdown   7 mins          ████░░░░░░░░░░░░░░░░░░░░░   16.61 %
+Rust       1 hr 16 mins    █████████████████░░░░░░░░   68.13 %
+Markdown   10 mins         ██▒░░░░░░░░░░░░░░░░░░░░░░   09.29 %
 ```
 
 <!--END_SECTION:waka-->
