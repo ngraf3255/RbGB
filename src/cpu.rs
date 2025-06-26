@@ -326,6 +326,9 @@ mod test {
         drop(mem);
         cpu.handle_interrupts();
 
+        assert_eq!(cpu.registers.reg_pc.value(), 0x48);
+        assert!(!cpu.ime);
+
         let ret = cpu.pop_stack();
         assert_eq!(ret, 0x100);
     }
