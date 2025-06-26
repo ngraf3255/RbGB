@@ -190,12 +190,14 @@ impl CPU {
         self.push_stack(self.registers.reg_pc);
 
         // Set the program counter to the address of the ISRs
+        debug_println!("Matching interrupt {interrupt}");
         match interrupt {
-            0 => self.registers.reg_pc.set(0x40),
-            1 => self.registers.reg_pc.set(0x48),
-            2 => self.registers.reg_pc.set(0x50),
-            4 => self.registers.reg_pc.set(0x60),
-            _ => self.registers.reg_pc.set(0x40),
+            0 => self.registers.reg_pc.set(0x40), // Vblank
+            1 => self.registers.reg_pc.set(0x48), // STAT
+            2 => self.registers.reg_pc.set(0x50), // Timer Interrupt
+            3 => self.registers.reg_pc.set(0x58), // Serial Interrupt
+            4 => self.registers.reg_pc.set(0x60), // Joypad
+            _ => self.registers.reg_pc.set(0x40), // Default
         }
     }
 

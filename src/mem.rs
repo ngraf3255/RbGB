@@ -299,7 +299,7 @@ impl Memory {
         // enabled interrupts. Reading from IF here would incorrectly overwrite
         // the existing enables.
         let mut enabled = self.read_byte(IE);
-        enabled |= interrupt << 1; // Sets the bit of the request
+        enabled |=  1 << interrupt; // Sets the bit of the request
         debug_println!("Enabling Interrupt {}", enabled);
         self.write_byte(IE, enabled);
     }
