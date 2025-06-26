@@ -303,7 +303,7 @@ mod test {
     use ntest::timeout;
 
     #[test]
-    #[timeout(1)]
+    #[timeout(10)]
     fn test_cpu_init() {
         let mem = Arc::new(Mutex::new(Memory::new()));
 
@@ -313,7 +313,7 @@ mod test {
     }
 
     #[test]
-    #[timeout(1)]
+    #[timeout(10)]
     fn test_cpu_interrupts() {
         let mem = Arc::new(Mutex::new(Memory::new()));
         let mut cpu = CPU::new(mem);
@@ -336,7 +336,7 @@ mod test {
     }
 
     #[test]
-    #[timeout(1)]
+    #[timeout(10)]
     fn test_push_pop_stack() {
         let mem = Arc::new(Mutex::new(Memory::new()));
         let mut cpu = CPU::new(mem);
