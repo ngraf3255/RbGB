@@ -207,7 +207,7 @@ impl Screen {
                     panic!("Invalid print location"); // crash program
                 }
 
-                let idx = ((line as usize * SCREEN_WIDTH as usize + pixel as usize) * 3) as usize;
+                let idx = (line as usize * SCREEN_WIDTH as usize + pixel as usize) * 3;
                 self.buffer[idx] = red;
                 self.buffer[idx + 1] = green;
                 self.buffer[idx + 2] = blue;
@@ -315,7 +315,7 @@ impl Screen {
                             continue; // TODO: Add packground handling
                         }
 
-                        let idx = ((scanline as usize * SCREEN_WIDTH as usize + pixel as usize) * 3) as usize;
+                        let idx = (scanline as usize * SCREEN_WIDTH as usize + pixel as usize) * 3;
                         self.buffer[idx] = red;
                         self.buffer[idx + 1] = green;
                         self.buffer[idx + 2] = blue;
@@ -460,7 +460,7 @@ mod test {
 
         screen.render_tiles(0x31);
 
-        let correct = (1 * SCREEN_WIDTH as usize + 0) * 3;
+        let correct = (SCREEN_WIDTH as usize) * 3;
         assert_eq!(screen.buffer[correct], 255);
         assert_eq!(screen.buffer[1], 0);
     }
