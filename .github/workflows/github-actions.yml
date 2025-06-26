@@ -9,19 +9,14 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+        run: |
+          sudo apt-get install libsdl2-dev
         with:
           # Linter uses git history
           fetch-depth: 0
       - name: Pass linter
         run: |
           cargo clippy -- -Dwarnings
-      - uses: libsdl-org/setup-sdl@main
-        name: SDL2 Install
-        id: sdl
-        with:
-          install-linux-dependencies: true
-          version: 2-latest
-          version-sdl-image: 2-latest
       - name: Compile the rust files
         run: |
           cargo build --all-targets
