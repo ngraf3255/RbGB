@@ -58,6 +58,8 @@ To build and run tests locally:
 - Implement handling of poisoned Mutexes
 - Implement full multithreading
 - Modify register system to allow them to be set more gracefully
+- Add DOCKERFILE to containerize (annoyed me when sdl2 wasn't accessable)
+- Trim workflow to reflect new docker container
 
 ## Coding Statistics
 
