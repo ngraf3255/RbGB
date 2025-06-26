@@ -291,10 +291,13 @@ impl Memory {
 
     /// Enables an interrupt for the CPU to handle
     pub fn enable_interrupt(&mut self, interrupt: Byte) {
-        let mut request = self.read_byte(IF);
-        request |= interrupt << 1; // Sets the bit of the request
-        debug_println!("Enabling Interrupt {}", request);
-        self.write_byte(IE, request);
+        // Use the current value of the IE register to preserve any already
+        // enabled interrupts. Reading from IF here would incorrectly overwrite
+        // the existing enables.
+        let mut enabled = self.read_byte(IE);
+        enabled |= interrupt << 1; // Sets the bit of the request
+        debug_println!("Enabling Interrupt {}", enabled);
+        self.write_byte(IE, enabled);
     }
 }
 
