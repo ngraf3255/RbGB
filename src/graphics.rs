@@ -367,7 +367,7 @@ impl Screen {
         let mut require_interrupt = false;
 
         // in vblank so mode is set to 1
-        if current_line >= 144 {
+        if current_line >= 144 { 
             mode = 1;
             status |= 0x1;
             status &= !0x2;
