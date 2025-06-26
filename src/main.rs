@@ -67,12 +67,7 @@ fn main() -> Result<(), String> {
         canvas.copy(
             &texture,
             None,
-            Some(Rect::new(
-                0,
-                0,
-                SCREEN_WIDTH * 5,
-                SCREEN_HEIGHT * 5,
-            )),
+            Some(Rect::new(0, 0, SCREEN_WIDTH * 5, SCREEN_HEIGHT * 5)),
         )?;
         canvas.present();
 
@@ -104,7 +99,7 @@ impl Emulator {
 
     pub fn update(&mut self) {
         debug_println!("Main Loop");
-        let num_cycles: u32 = 0;
+        let _num_cycles: u32 = 0;
         // while num_cycles < Self::MAXCYCLES {
         //     let cycles: u32 = self.execute_next_opcode();
         //     num_cycles += cycles;
@@ -113,7 +108,7 @@ impl Emulator {
         //     self.handle_interrupts();
         // }
         self.screen.update_screen(0);
-    std::thread::sleep(Duration::from_millis(10));
+        std::thread::sleep(Duration::from_millis(10));
     }
 
     fn execute_next_opcode(&self) -> u32 {

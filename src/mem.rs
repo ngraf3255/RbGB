@@ -311,7 +311,7 @@ impl Memory {
         }
     }
 
-    pub fn get_color(&self, color_num: Byte, addr: Word) -> COLOR {
+    pub fn get_color(&self, color_num: Byte, addr: Word) -> Color {
         let palette = self.read_byte(addr);
 
         let hi;
@@ -342,10 +342,10 @@ impl Memory {
         let color = (((palette & (1 << hi)) >> hi) << 1) | ((palette & (1 << lo)) >> lo);
 
         match color {
-            0 => COLOR::White,
-            1 => COLOR::LightGrey,
-            2 => COLOR::DarkGrey,
-            3 => COLOR::Black,
+            0 => Color::White,
+            1 => Color::LightGrey,
+            2 => Color::DarkGrey,
+            3 => Color::Black,
             _ => panic!("Invalid color found"), // this should not be possible
         }
     }

@@ -139,12 +139,11 @@ impl Screen {
                 background_memory = 0x9800;
             }
 
-            let y_pos;
-            if !using_window {
-                y_pos = scroll_y + mem.read_byte(CURRENT_SCANLINE);
+            let y_pos = if !using_window {
+                scroll_y + mem.read_byte(CURRENT_SCANLINE)
             } else {
-                y_pos = mem.read_byte(CURRENT_SCANLINE) - window_y;
-            }
+                mem.read_byte(CURRENT_SCANLINE) - window_y
+            };
 
             let tile_row = (y_pos / 8) * 32;
 
@@ -155,18 +154,9 @@ impl Screen {
                 }
 
                 let tile_column = x_pos / 8;
-                let tile_num;
-
-                // TODO: Deal with signage
-                if unsigned {
-                    tile_num = mem.read_byte(
-                        (background_memory + tile_row as Word + tile_column as Word) as Word,
-                    );
-                } else {
-                    tile_num = mem.read_byte(
-                        (background_memory + tile_row as Word + tile_column as Word) as Word,
-                    );
-                }
+                let tile_num = mem.read_byte(
+                    (background_memory + tile_row as Word + tile_column as Word) as Word,
+                );
 
                 let mut tile_location: Word = tile_data;
 
@@ -184,31 +174,31 @@ impl Screen {
                 let color_num = ((data2 & (1 << color_bit)) >> color_bit)
                     | ((data1 & (1 << color_bit)) >> color_bit);
 
-                let color: COLOR = mem.get_color(color_num, 0xFF47);
+                let color: Color = mem.get_color(color_num, 0xFF47);
                 let red;
                 let blue;
                 let green;
 
                 match color {
-                    COLOR::White => {
+                    Color::White => {
                         red = 255;
                         green = 255;
-                        blue = 255
+                        blue = 255;
                     }
-                    COLOR::LightGrey => {
+                    Color::LightGrey => {
                         red = 0xCC;
                         green = 0xCC;
-                        blue = 0xCC
+                        blue = 0xCC;
                     }
-                    COLOR::DarkGrey => {
+                    Color::DarkGrey => {
                         red = 0x77;
                         green = 0x77;
-                        blue = 0x77
+                        blue = 0x77;
                     }
-                    COLOR::Black => {
+                    Color::Black => {
                         red = 0;
                         green = 0;
-                        blue = 0
+                        blue = 0;
                     }
                 }
 
@@ -265,7 +255,7 @@ impl Screen {
                     let data2 =
                         mem.read_byte((0x8000 + (tile_location as Word * 16)) + line as Word + 1);
 
-                    for tile_pixel in 7..=0 {
+                    for tile_pixel in (0..=7).rev() {
                         let mut color_bit = tile_pixel as i32;
 
                         if x_flip {
@@ -282,7 +272,7 @@ impl Screen {
 
                         let color = mem.get_color(color_num, addr);
 
-                        if color == COLOR::White {
+                        if color == Color::White {
                             continue;
                         }
 
@@ -291,25 +281,25 @@ impl Screen {
                         let green;
 
                         match color {
-                            COLOR::White => {
+                            Color::White => {
                                 red = 255;
                                 green = 255;
-                                blue = 255
+                                blue = 255;
                             }
-                            COLOR::LightGrey => {
+                            Color::LightGrey => {
                                 red = 0xCC;
                                 green = 0xCC;
-                                blue = 0xCC
+                                blue = 0xCC;
                             }
-                            COLOR::DarkGrey => {
+                            Color::DarkGrey => {
                                 red = 0x77;
                                 green = 0x77;
-                                blue = 0x77
+                                blue = 0x77;
                             }
-                            COLOR::Black => {
+                            Color::Black => {
                                 red = 0;
                                 green = 0;
-                                blue = 0
+                                blue = 0;
                             }
                         }
 
@@ -320,7 +310,7 @@ impl Screen {
                             panic!("Invalid print location"); // crash program
                         }
 
-                        if attributes&(1<<7) != 0 {
+                        if attributes & (1 << 7) != 0 {
                             continue; // TODO: Add packground handling
                         }
 
@@ -359,7 +349,7 @@ impl Screen {
         let mut require_interrupt = false;
 
         // in vblank so mode is set to 1
-        if current_line >= 144 { 
+        if current_line >= 144 {
             mode = 1;
             status |= 0x1;
             status &= !0x2;
