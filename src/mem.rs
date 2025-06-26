@@ -6,7 +6,6 @@ use std::{
 /// Functions and storage for operating on device memory
 use crate::types::*;
 use debug_print::debug_println;
-use sdl2::pixels::Color;
 
 pub type SharedMemory = Arc<Mutex<Memory>>;
 
@@ -342,13 +341,13 @@ impl Memory {
 
         let color = (((palette & (1 << hi)) >> hi) << 1) | ((palette & (1 << lo)) >> lo);
 
-        return match color {
+        match color {
             0 => COLOR::White,
             1 => COLOR::LightGrey,
             2 => COLOR::DarkGrey,
             3 => COLOR::Black,
             _ => panic!("Invalid color found"), // this should not be possible
-        };
+        }
     }
 }
 

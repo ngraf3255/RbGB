@@ -9,7 +9,7 @@ use std::{
 
 use debug_print::debug_println;
 use mem::Memory;
-use sdl2::{event::Event, libc::{c_uint, sleep}, pixels::PixelFormatEnum, rect::Rect};
+use sdl2::{event::Event, pixels::PixelFormatEnum, rect::Rect};
 use types::{SCREEN_HEIGHT, SCREEN_WIDTH};
 
 mod cpu;
@@ -70,8 +70,8 @@ fn main() -> Result<(), String> {
             Some(Rect::new(
                 0,
                 0,
-                (SCREEN_WIDTH * 5) as u32,
-                (SCREEN_HEIGHT * 5) as u32,
+                SCREEN_WIDTH * 5,
+                SCREEN_HEIGHT * 5,
             )),
         )?;
         canvas.present();
@@ -104,7 +104,7 @@ impl Emulator {
 
     pub fn update(&mut self) {
         debug_println!("Main Loop");
-        let mut num_cycles: u32 = 0;
+        let num_cycles: u32 = 0;
         // while num_cycles < Self::MAXCYCLES {
         //     let cycles: u32 = self.execute_next_opcode();
         //     num_cycles += cycles;

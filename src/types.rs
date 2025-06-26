@@ -41,6 +41,7 @@ pub const MEMORY_REGION: Word = 0x8000; // Graphics memory location
 pub const SIZE_OF_TILE_IN_MEMORY: i32 = 16;
 pub const OFFSET: i32 = 128;
 
+#[warn(clippy::upper_case_acronyms)]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum COLOR {
     White,

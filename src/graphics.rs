@@ -116,11 +116,7 @@ impl Screen {
 
         // is the window enabled?
         if control & (1 << 5) != 0 {
-            if window_y <= mem.read_byte(CURRENT_SCANLINE) {
-                using_window = true;
-            } else {
-                using_window = false;
-            }
+            using_window = window_y <= mem.read_byte(CURRENT_SCANLINE);
 
             // which tile data?
             if control & (1 << 4) != 0 {
@@ -137,12 +133,10 @@ impl Screen {
                 } else {
                     background_memory = 0x9800;
                 }
+            } else if control & (1 << 6) != 0 {
+                background_memory = 0x9C00;
             } else {
-                if control & (1 << 6) != 0 {
-                    background_memory = 0x9C00;
-                } else {
-                    background_memory = 0x9800;
-                }
+                background_memory = 0x9800;
             }
 
             let y_pos;
@@ -156,10 +150,8 @@ impl Screen {
 
             for pixel in 0..SCREEN_WIDTH as Byte {
                 let mut x_pos = pixel + scroll_x;
-                if using_window {
-                    if pixel >= window_x {
-                        x_pos = pixel - window_x;
-                    }
+                if using_window && pixel >= window_x {
+                    x_pos = pixel - window_x;
                 }
 
                 let tile_column = x_pos / 8;
@@ -188,7 +180,7 @@ impl Screen {
                 let data1 = mem.read_byte(tile_location + line as Word);
                 let data2 = mem.read_byte(tile_location + line as Word + 1);
 
-                let color_bit: i32 = -1 * ((x_pos as u32 % 8) as i32 - 7);
+                let color_bit: i32 = -((x_pos as u32 % 8) as i32 - 7);
                 let color_num = ((data2 & (1 << color_bit)) >> color_bit)
                     | ((data1 & (1 << color_bit)) >> color_bit);
 
