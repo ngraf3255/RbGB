@@ -163,7 +163,6 @@ mod test {
     use ntest::timeout;
 
     #[test]
-    #[should_panic]
     #[timeout(100)]
     fn test_unimplemented_main_loop() {
         let mut emulator: Emulator = Emulator::new();

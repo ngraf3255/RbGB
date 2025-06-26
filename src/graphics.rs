@@ -325,13 +325,16 @@ impl Screen {
 
     fn set_lcd_status(&mut self) {
         debug_println!("Updating LCD Status!");
+
+        let lcd_enabled = self.is_lcd_enabled();
         // Gets lock on memory
         let mut mem = self.device_memory.lock().unwrap();
 
         let mut status = mem.read_byte(LCD_STATUS);
 
+
         // Behavior when lcd is disabled
-        if !self.is_lcd_enabled() {
+        if lcd_enabled {
             // sets the mode to 1 when the lcd is disabled and resets the scanline
             self.scanline_counter = 456;
             mem.write_byte_forced(CURRENT_SCANLINE, 0); // resets scanline
@@ -342,11 +345,15 @@ impl Screen {
             return;
         }
 
+
+
         let current_line = mem.read_byte(CURRENT_SCANLINE);
         let current_mode = status & 0x3;
 
         let mode;
         let mut require_interrupt = false;
+
+        debug_println!("Current scanline is {current_line} and mode is {current_mode}");
 
         // in vblank so mode is set to 1
         if current_line >= 144 {
@@ -393,10 +400,15 @@ impl Screen {
         mem.write_byte(LCD_STATUS, status);
     }
 
-    fn is_lcd_enabled(&self) -> bool {
+    fn is_lcd_enabled(&mut self) -> bool {
         // Check bit 7 of LCD Control register (0xFF40)
-        self.device_memory.lock().unwrap().read_byte(LCD_CONTROL) & (1 << 7) != 0
-    }
+        debug_println!("Checking if LCD is enabled");
+        let mem = self.device_memory.lock().unwrap();
+        debug_println!("Lock aquired");
+        let x = mem.read_byte(LCD_CONTROL) & (1 << 7) != 0;
+        debug_println!("Check complete");
+        x
+    }   
 
     // TODO: Add more methods for drawing, sprites, etc.
 }

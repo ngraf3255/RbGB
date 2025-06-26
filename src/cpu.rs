@@ -348,4 +348,52 @@ mod test {
         assert_eq!(ret, 0x01B0);
         assert_eq!(cpu.registers.reg_sp.value(), 0xFFFE);
     }
+
+
+    
+    #[test]
+    #[timeout(10)]
+    fn test_timer_increment() {
+        let mem = Arc::new(Mutex::new(Memory::new()));
+        {
+            let mut m = mem.lock().unwrap();
+            m.write_byte(TMC, 0x5); // enable timer, freq select 1
+            m.set_clock_frequency();
+            m.timer_counter = 0; // force immediate update
+        }
+        let mut timer = Timer::new(Arc::clone(&mem));
+        timer.update_timers(16);
+        let m = mem.lock().unwrap();
+        assert_eq!(m.read_byte(TIMA), 1);
+        assert_eq!(m.read_byte(IF), 0);
+    }
+
+    #[test]
+    #[timeout(10)]
+    fn test_timer_overflow() {
+        let mem = Arc::new(Mutex::new(Memory::new()));
+        {
+            let mut m = mem.lock().unwrap();
+            m.write_byte(TMC, 0x5); // enable timer, freq select 1
+            m.write_byte(TIMA, 255);
+            m.write_byte(TMA, 7);
+            m.set_clock_frequency();
+            m.timer_counter = 0; // force immediate update
+        }
+        let mut timer = Timer::new(Arc::clone(&mem));
+        timer.update_timers(16);
+        let m = mem.lock().unwrap();
+        assert_eq!(m.read_byte(TIMA), 7);
+        assert_eq!(m.read_byte(IF) & 0x4, 0x4);
+    }
+
+    #[test]
+    #[timeout(10)]
+    fn test_divider_register_increment() {
+        let mem = Arc::new(Mutex::new(Memory::new()));
+        let mut timer = Timer::new(Arc::clone(&mem));
+        timer.update_timers(255);
+        let m = mem.lock().unwrap();
+        assert_eq!(m.read_byte_forced(DIVIDER_REGISTER), 1);
+    }
 }

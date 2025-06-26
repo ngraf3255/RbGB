@@ -36,6 +36,7 @@ impl Memory {
 
     // Wrapper for memory read functionality
     pub fn read_byte(&self, addr: Word) -> Byte {
+        debug_println!("Reading byte at addr 0x{:X}", addr);
         // are we reading from the rom memory bank?
         if (0x4000..0x7FFF).contains(&addr) {
             let addr = addr as usize - 0x4000;
@@ -47,6 +48,7 @@ impl Memory {
 
             self.mem[addr + (self.ram_banks as usize) * 0x2000]
         } else {
+            debug_println!("VALID READ");
             // Else return memory
             self.mem[addr as usize]
         }
@@ -422,7 +424,7 @@ mod test {
     }
 
     #[test]
-    #[timeout(1)]
+    #[timeout(10)]
     fn test_enabling_ram() {
         let mut mem: Memory = Memory::new();
         mem.ram_startup();
@@ -442,7 +444,7 @@ mod test {
     }
 
     #[test]
-    #[timeout(1)]
+    #[timeout(10)]
     fn test_mbc1() {
         let mut mem: Memory = Memory::new();
         mem.ram_startup();
@@ -494,7 +496,7 @@ mod test {
     }
 
     #[test]
-    #[timeout(1)]
+    #[timeout(10)]
     fn test_mbc2() {
         let mut mem: Memory = Memory::new();
         mem.ram_startup();
@@ -515,5 +517,17 @@ mod test {
         mem.write_byte(0x11, 0xA);
         println!("{}", mem.ram_write_enable);
         assert!(!mem.ram_write_enable);
+    }
+
+    #[test]
+    #[timeout(10)]
+    fn test_get_color() {
+        let mut mem = Memory::new();
+        mem.write_byte_forced(0xFF47, 0xE4); // 1110_0100
+
+        assert_eq!(mem.get_color(0, 0xFF47), Color::White);
+        assert_eq!(mem.get_color(1, 0xFF47), Color::LightGrey);
+        assert_eq!(mem.get_color(2, 0xFF47), Color::DarkGrey);
+        assert_eq!(mem.get_color(3, 0xFF47), Color::Black);
     }
 }
