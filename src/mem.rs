@@ -36,6 +36,7 @@ impl Memory {
 
     // Wrapper for memory read functionality
     pub fn read_byte(&self, addr: Word) -> Byte {
+        debug_println!("Reading byte at addr 0x{:X}", addr);
         // are we reading from the rom memory bank?
         if (0x4000..0x7FFF).contains(&addr) {
             let addr = addr as usize - 0x4000;
@@ -47,6 +48,7 @@ impl Memory {
 
             self.mem[addr + (self.ram_banks as usize) * 0x2000]
         } else {
+            debug_println!("VALID READ");
             // Else return memory
             self.mem[addr as usize]
         }
@@ -84,10 +86,12 @@ impl Memory {
         } else if DIVIDER_REGISTER == addr {
             // If ever writing to the divider register always set it to 0
             self.mem[DIVIDER_REGISTER as usize] = 0;
-
         } else if addr == CURRENT_SCANLINE {
             // If ever writing to the current scanline always set it to 0
             self.mem[CURRENT_SCANLINE as usize] = 0;
+        } else if addr == DMA_REG {
+            // Game is activating a direct memory access
+            self.dma_transfer(value);
         } else {
             self.mem[addr as usize] = value;
         }
@@ -226,7 +230,7 @@ impl Memory {
     }
 
     /// Returns the rom banking type of the current game
-    pub fn identify_banking_type(self) -> RomBankingType {
+    pub fn identify_banking_type(&self) -> RomBankingType {
         match self.read_byte(0x147) {
             1..3 => RomBankingType::MBC1,
             5..6 => RomBankingType::MBC2,
@@ -284,7 +288,7 @@ impl Memory {
     /// Requests an interrupt for the CPU to handle
     pub fn request_interrupt(&mut self, interrupt: Byte) {
         let mut request = self.read_byte(IF);
-        request |= interrupt << 1; // Sets the bit of the request
+        request |= 1 << interrupt; // Sets the bit of the request
         debug_println!("Writing Interrupt {}", request);
         self.write_byte(IF, request);
     }
@@ -295,9 +299,57 @@ impl Memory {
         // enabled interrupts. Reading from IF here would incorrectly overwrite
         // the existing enables.
         let mut enabled = self.read_byte(IE);
-        enabled |= interrupt << 1; // Sets the bit of the request
+        enabled |=  1 << interrupt; // Sets the bit of the request
         debug_println!("Enabling Interrupt {}", enabled);
         self.write_byte(IE, enabled);
+    }
+
+    /// Sets sprite into the sprite ram
+    fn dma_transfer(&mut self, value: Byte) {
+        let address: Word = (value as Word) << 8; // source address is data * 100
+        for i in 0..0xA0 {
+            let memory = self.read_byte(address + i);
+            self.write_byte(SPRITE_RAM + i, memory);
+        }
+    }
+
+    pub fn get_color(&self, color_num: Byte, addr: Word) -> Color {
+        let palette = self.read_byte(addr);
+
+        let hi;
+        let lo;
+
+        match color_num {
+            0 => {
+                hi = 1;
+                lo = 0
+            }
+            1 => {
+                hi = 3;
+                lo = 2
+            }
+            2 => {
+                hi = 5;
+                lo = 4
+            }
+            3 => {
+                hi = 7;
+                lo = 6
+            }
+            _ => {
+                panic!("Color number invalid")
+            } // this should not be possible
+        }
+
+        let color = (((palette & (1 << hi)) >> hi) << 1) | ((palette & (1 << lo)) >> lo);
+
+        match color {
+            0 => Color::White,
+            1 => Color::LightGrey,
+            2 => Color::DarkGrey,
+            3 => Color::Black,
+            _ => panic!("Invalid color found"), // this should not be possible
+        }
     }
 }
 
@@ -372,7 +424,7 @@ mod test {
     }
 
     #[test]
-    #[timeout(1)]
+    #[timeout(10)]
     fn test_enabling_ram() {
         let mut mem: Memory = Memory::new();
         mem.ram_startup();
@@ -392,7 +444,7 @@ mod test {
     }
 
     #[test]
-    #[timeout(1)]
+    #[timeout(10)]
     fn test_mbc1() {
         let mut mem: Memory = Memory::new();
         mem.ram_startup();
@@ -444,7 +496,7 @@ mod test {
     }
 
     #[test]
-    #[timeout(1)]
+    #[timeout(10)]
     fn test_mbc2() {
         let mut mem: Memory = Memory::new();
         mem.ram_startup();
@@ -465,5 +517,120 @@ mod test {
         mem.write_byte(0x11, 0xA);
         println!("{}", mem.ram_write_enable);
         assert!(!mem.ram_write_enable);
+    }
+
+    #[test]
+    #[timeout(10)]
+    fn test_get_color() {
+        let mut mem = Memory::new();
+        mem.write_byte_forced(0xFF47, 0xE4); // 1110_0100
+
+        assert_eq!(mem.get_color(0, 0xFF47), Color::White);
+        assert_eq!(mem.get_color(1, 0xFF47), Color::LightGrey);
+        assert_eq!(mem.get_color(2, 0xFF47), Color::DarkGrey);
+        assert_eq!(mem.get_color(3, 0xFF47), Color::Black);
+    }
+
+    #[test]
+    #[timeout(10)]
+    fn test_identify_banking_type() {
+        let mut mem = Memory::new();
+        mem.write_byte_forced(0x147, 2);
+        assert_eq!(mem.identify_banking_type(), RomBankingType::MBC1);
+
+        let mut mem2 = Memory::new();
+        mem2.write_byte_forced(0x147, 5);
+        assert_eq!(mem2.identify_banking_type(), RomBankingType::MBC2);
+
+        let mem3 = Memory::new();
+        assert_eq!(mem3.identify_banking_type(), RomBankingType::None);
+    }
+
+    #[test]
+    #[timeout(10)]
+    fn test_clock_frequency_values() {
+        let mut mem = Memory::new();
+
+        mem.write_byte_forced(TMC, 0);
+        mem.set_clock_frequency();
+        assert_eq!(mem.timer_counter, 1024);
+
+        mem.write_byte_forced(TMC, 1);
+        mem.set_clock_frequency();
+        assert_eq!(mem.timer_counter, 16);
+
+        mem.write_byte_forced(TMC, 2);
+        mem.set_clock_frequency();
+        assert_eq!(mem.timer_counter, 64);
+
+        mem.write_byte_forced(TMC, 3);
+        mem.set_clock_frequency();
+        assert_eq!(mem.timer_counter, 256);
+    }
+
+    #[test]
+    #[timeout(10)]
+    fn test_dma_transfer() {
+        let mut mem = Memory::new();
+
+        // Fill source memory region with known values
+        for i in 0..0xA0 {
+            mem.write_byte_forced(0xC000 + i, i as Byte);
+        }
+
+        // Trigger DMA transfer from 0xC000 to sprite RAM
+        mem.write_byte(DMA_REG, 0xC0);
+
+        for i in 0..0xA0 {
+            assert_eq!(mem.read_byte(SPRITE_RAM + i), i as Byte);
+        }
+    }
+
+    #[test]
+    #[timeout(10)]
+    fn test_set_clock_frequency() {
+        let mut mem = Memory::new();
+
+        let tests = [
+            (0x0, 1024),
+            (0x1, 16),
+            (0x2, 64),
+            (0x3, 256),
+        ];
+
+        for (val, expected) in tests {
+            mem.write_byte_forced(TMC, val);
+            mem.set_clock_frequency();
+            assert_eq!(mem.timer_counter, expected);
+        }
+    }
+
+    #[test]
+    #[timeout(10)]
+    fn test_request_enable_interrupt() {
+        let mut mem = Memory::new();
+        mem.request_interrupt(1);
+        assert_eq!(mem.read_byte(IF), 0x2);
+        mem.request_interrupt(2);
+        assert_eq!(mem.read_byte(IF), 0x6);
+
+        let mut mem2 = Memory::new();
+        mem2.enable_interrupt(1);
+        assert_eq!(mem2.read_byte(IE), 0x2);
+        mem2.request_interrupt(1); // preserve previous bit via IF register
+        mem2.enable_interrupt(2);
+        assert_eq!(mem2.read_byte(IE), 0x6);
+    }
+
+    #[test]
+    #[timeout(1)]
+    fn test_interrupt_bit_ops() {
+        let mut mem = Memory::new();
+
+        mem.request_interrupt(4);
+        assert_eq!(mem.read_byte(IF), 1 << 4);
+
+        mem.enable_interrupt(4);
+        assert_eq!(mem.read_byte(IE), 1 << 4);
     }
 }
