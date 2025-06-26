@@ -64,14 +64,14 @@ To build and run tests locally:
 <!--START_SECTION:waka-->
 
 ```rust
-From: 18 June 2025 - To: 23 June 2025
+From: 18 June 2025 - To: 24 June 2025
 
-Total Time: 6 hrs 32 mins
+Total Time: 7 hrs 34 mins
 
-Rust       5 hrs 44 mins   ██████████████████████░░░   87.74 %
-Markdown   11 mins         ▓░░░░░░░░░░░░░░░░░░░░░░░░   03.01 %
-C          4 mins          ▒░░░░░░░░░░░░░░░░░░░░░░░░   01.09 %
-C++        3 mins          ▒░░░░░░░░░░░░░░░░░░░░░░░░   00.79 %
+Rust       6 hrs 45 mins   ██████████████████████▒░░   89.13 %
+Markdown   11 mins         ▓░░░░░░░░░░░░░░░░░░░░░░░░   02.60 %
+C++        4 mins          ▒░░░░░░░░░░░░░░░░░░░░░░░░   00.99 %
+C          4 mins          ▒░░░░░░░░░░░░░░░░░░░░░░░░   00.94 %
 ```
 
 <!--END_SECTION:waka-->
