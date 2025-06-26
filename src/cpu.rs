@@ -178,7 +178,10 @@ impl CPU {
         debug_println!("Servicing interrupt {}", interrupt);
         self.ime = false; // Disables new interrupts
         let mut request = mem.read_byte(IF);
-        request &= !(2 ^ interrupt); // Clears interrupt
+        // Clear the requested interrupt flag. The previous implementation used
+        // `2 ^ interrupt` which performs a bitwise XOR and resulted in the
+        // wrong bit being cleared.
+        request &= !(1 << interrupt); // Clears interrupt
         mem.write_byte(IF, request);
 
         drop(mem); // Drops memory since we are done writing
