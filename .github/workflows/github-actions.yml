@@ -9,11 +9,13 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
-        run: |
-          sudo apt-get install libsdl2-dev
         with:
           # Linter uses git history
           fetch-depth: 0
+      - name: Install SDL2
+        run: |
+          sudo apt-get install libsdl2-dev
+        
       - name: Pass linter
         run: |
           cargo clippy -- -Dwarnings
