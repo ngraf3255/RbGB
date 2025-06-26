@@ -31,6 +31,23 @@ pub const SCREEN_HEIGHT: u32 = 144;
 pub const SCREEN_WIDTH: u32 = 160;
 pub const CURRENT_SCANLINE: Word = 0xFF44;
 pub const LCD_STATUS: Word = 0xFF41;
+pub const LCD_CONTROL: Word = 0xFF40;
+pub const COINCIDENCE_FLAG: Word = 0xFF45;
+pub const DMA_REG: Word = 0xFF46;
+pub const SPRITE_RAM: Word = 0xFE00; // from 0xFE00 to OxFE9F
+pub const MODE_2_BOUNDS: i32 = 456 - 80;
+pub const MODE_3_BOUNDS: i32 = MODE_2_BOUNDS - 172;
+pub const MEMORY_REGION: Word = 0x8000; // Graphics memory location
+pub const SIZE_OF_TILE_IN_MEMORY: i32 = 16;
+pub const OFFSET: i32 = 128;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Color {
+    White,
+    LightGrey,
+    DarkGrey,
+    Black,
+}
 
 /// RAM  Device Memory
 pub const MEM_SIZE: usize = 0x10000;
@@ -87,4 +104,43 @@ pub enum CurrentRamBank {
     Bank1,
     Bank2,
     Bank3,
+}
+
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use std::fs::{remove_file, File};
+    use std::io::Write;
+    use ntest::timeout;
+
+    #[test]
+    #[timeout(10)]
+    fn test_load_cartridge_success() {
+        let path = "test_cart.gb";
+        {
+            let mut f = File::create(path).unwrap();
+            f.write_all(&[1u8, 2, 3, 4]).unwrap();
+        }
+
+        let bytes = load_cartridge(path).unwrap();
+        assert_eq!(bytes, 4);
+        let mem = CARTRIDGE_MEMORY.lock().unwrap();
+        assert_eq!(&mem[..4], &[1, 2, 3, 4]);
+        drop(mem);
+        remove_file(path).unwrap();
+    }
+
+    #[test]
+    #[timeout(10)]
+    fn test_load_cartridge_missing() {
+        let res = load_cartridge("nonexistent.gb");
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_current_rom_bank_conversion() {
+        let bank: CurrentRomBank = 5u8.into();
+        assert_eq!(bank.value(), 5);
+    }
 }
