@@ -15,6 +15,13 @@ jobs:
       - name: Pass linter
         run: |
           cargo clippy -- -Dwarnings
+      - uses: libsdl-org/setup-sdl@main
+        name: SDL2 Install
+        id: sdl
+        with:
+          install-linux-dependencies: true
+          version: 2-latest
+          version-sdl-image: 2-latest
       - name: Compile the rust files
         run: |
           cargo build --all-targets
