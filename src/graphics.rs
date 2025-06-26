@@ -203,13 +203,14 @@ impl Screen {
                 }
 
                 let line = mem.read_byte(CURRENT_SCANLINE);
-                if (line > 143) || (pixel > 159) {
+                if (line >= SCREEN_HEIGHT as u8) || (pixel >= SCREEN_WIDTH as u8) {
                     panic!("Invalid print location"); // crash program
                 }
 
-                self.buffer[(line + (3 * pixel)) as usize] = red;
-                self.buffer[(line + (3 * pixel) + 1) as usize] = green;
-                self.buffer[(line + (3 * pixel) + 2) as usize] = blue;
+                let idx = ((line as usize * SCREEN_WIDTH as usize + pixel as usize) * 3) as usize;
+                self.buffer[idx] = red;
+                self.buffer[idx + 1] = green;
+                self.buffer[idx + 2] = blue;
             }
         }
     }
@@ -306,7 +307,7 @@ impl Screen {
                         let x_pix = 0 - tile_pixel + 7;
                         let pixel = x_pos + x_pix;
 
-                        if (scanline > 143) || (scanline > 159) {
+                        if (scanline > SCREEN_HEIGHT as u8) || (scanline > SCREEN_WIDTH as u8) {
                             panic!("Invalid print location"); // crash program
                         }
 
@@ -314,9 +315,10 @@ impl Screen {
                             continue; // TODO: Add packground handling
                         }
 
-                        self.buffer[(scanline + (3 * pixel)) as usize] = red;
-                        self.buffer[(scanline + (3 * pixel) + 1) as usize] = green;
-                        self.buffer[(scanline + (3 * pixel) + 2) as usize] = blue;
+                        let idx = ((scanline as usize * SCREEN_WIDTH as usize + pixel as usize) * 3) as usize;
+                        self.buffer[idx] = red;
+                        self.buffer[idx + 1] = green;
+                        self.buffer[idx + 2] = blue;
                     }
                 }
             }
@@ -332,7 +334,6 @@ impl Screen {
 
         let mut status = mem.read_byte(LCD_STATUS);
 
-
         // Behavior when lcd is disabled
         if lcd_enabled {
             // sets the mode to 1 when the lcd is disabled and resets the scanline
@@ -344,8 +345,6 @@ impl Screen {
             mem.write_byte(LCD_STATUS, status);
             return;
         }
-
-
 
         let current_line = mem.read_byte(CURRENT_SCANLINE);
         let current_mode = status & 0x3;
@@ -408,7 +407,61 @@ impl Screen {
         let x = mem.read_byte(LCD_CONTROL) & (1 << 7) != 0;
         debug_println!("Check complete");
         x
-    }   
+    }
 
     // TODO: Add more methods for drawing, sprites, etc.
+}
+
+
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use ntest::timeout;
+    use std::sync::{Arc, Mutex};
+
+    #[test]
+    #[timeout(10)]
+    fn test_is_lcd_enabled() {
+        let mem = Arc::new(Mutex::new(Memory::new()));
+        {
+            let mut m = mem.lock().unwrap();
+            m.write_byte(LCD_CONTROL, 0x80);
+        }
+        let mut screen = Screen::new(Arc::clone(&mem));
+        assert!(screen.is_lcd_enabled());
+
+        {
+            let mut m = mem.lock().unwrap();
+            m.write_byte(LCD_CONTROL, 0x00);
+        }
+        assert!(!screen.is_lcd_enabled());
+    }
+
+    #[test]
+    #[timeout(10)]
+    fn test_render_tile_indexing() {
+        let mem = Arc::new(Mutex::new(Memory::new()));
+        mem.lock().unwrap().ram_startup();
+        let mut screen = Screen::new(Arc::clone(&mem));
+
+        {
+            let mut m = mem.lock().unwrap();
+            m.write_byte_forced(CURRENT_SCANLINE, 1);
+            m.write_byte_forced(0xFF42, 0);
+            m.write_byte_forced(0xFF43, 0);
+            m.write_byte_forced(0xFF4A, 0);
+            m.write_byte_forced(0xFF4B, 7);
+            m.write_byte_forced(0xFF47, 0);
+            m.write_byte_forced(0x9800, 0);
+            m.write_byte_forced(0x8000, 0);
+            m.write_byte_forced(0x8001, 0);
+        }
+
+        screen.render_tiles(0x31);
+
+        let correct = (1 * SCREEN_WIDTH as usize + 0) * 3;
+        assert_eq!(screen.buffer[correct], 255);
+        assert_eq!(screen.buffer[1], 0);
+    }
 }

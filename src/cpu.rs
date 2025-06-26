@@ -243,17 +243,15 @@ impl Timer {
     }
 
     pub fn update_timers(&mut self, cycles: i32) {
-        self.do_divier_register(cycles);
+        self.do_divider_registers(cycles);
 
         //the clock must be enabled to update itself
         if self.is_clock_enabled() {
             let mut mem = self.mem.lock().unwrap();
-            let timer_counter = mem.timer_counter;
-
             mem.timer_counter -= cycles;
 
             // enough cpu cycled have happened to update the timer
-            if timer_counter <= 0 {
+            if mem.timer_counter <= 0 {
                 // reset timer counter to correct value;
                 mem.set_clock_frequency();
 
@@ -274,7 +272,7 @@ impl Timer {
         }
     }
 
-    fn do_divier_register(&mut self, cycles: i32) {
+    fn do_divider_registers(&mut self, cycles: i32) {
         self.divider_counter += cycles as u32;
         if self.divider_counter >= 255 {
             self.divider_counter = 0;
@@ -349,8 +347,6 @@ mod test {
         assert_eq!(cpu.registers.reg_sp.value(), 0xFFFE);
     }
 
-
-    
     #[test]
     #[timeout(10)]
     fn test_timer_increment() {
@@ -395,5 +391,106 @@ mod test {
         timer.update_timers(255);
         let m = mem.lock().unwrap();
         assert_eq!(m.read_byte_forced(DIVIDER_REGISTER), 1);
+    }
+
+    #[test]
+    #[timeout(10)]
+    fn test_register_operations() {
+        let mut reg = registers::Register::new(0x1234);
+        assert_eq!(reg.value(), 0x1234);
+        assert_eq!(reg.high_value(), 0x12);
+        assert_eq!(reg.low_value(), 0x34);
+
+        reg.incriment();
+        assert_eq!(reg.value(), 0x1235);
+
+        reg.decriment();
+        reg.decriment();
+        assert_eq!(reg.value(), 0x1233);
+
+        reg.set(0xABCD);
+        assert_eq!(reg.value(), 0xABCD);
+    }
+
+    #[test]
+    #[timeout(10)]
+    fn test_cpu_reset() {
+        let mem = Arc::new(Mutex::new(Memory::new()));
+        let mut cpu = CPU::new(Arc::clone(&mem));
+
+        cpu.cycles = 42;
+        cpu.ime = false;
+        cpu.registers.reg_af.set(0xFFFF);
+
+        let old_mem = Arc::clone(&cpu.device_memory);
+        cpu.reset();
+
+        assert_eq!(cpu.cycles, 0);
+        assert!(!cpu.ime);
+        assert_eq!(cpu.registers.reg_af.value(), 0x01B0);
+        assert!(!Arc::ptr_eq(&old_mem, &cpu.device_memory));
+        let new_mem = cpu.device_memory.lock().unwrap();
+        assert_eq!(new_mem.read_byte(TIMA), 0);
+    }
+
+    #[test]
+    #[timeout(10)]
+    fn test_timer_disabled_no_increment() {
+        let mem = Arc::new(Mutex::new(Memory::new()));
+        {
+            let mut m = mem.lock().unwrap();
+            m.write_byte(TMC, 0x0); // timer disabled
+            m.set_clock_frequency();
+            m.timer_counter = 0;
+        }
+        let mut timer = Timer::new(Arc::clone(&mem));
+        timer.update_timers(16);
+        let m = mem.lock().unwrap();
+        assert_eq!(m.read_byte(TIMA), 0);
+    }
+    #[test]
+    #[timeout(10)]
+    fn test_serial_interrupt_vector() {
+        let mem = Arc::new(Mutex::new(Memory::new()));
+        let mut cpu = CPU::new(Arc::clone(&mem));
+
+        {
+            let mut m = mem.lock().unwrap();
+            m.request_interrupt(3);
+            m.enable_interrupt(3);
+            assert_eq!(m.read_byte(IF), 1 << 3);
+        }
+
+        cpu.handle_interrupts();
+
+        {
+            let m = cpu.device_memory.lock().unwrap();
+            assert_eq!(m.read_byte(IF), 0);
+        }
+
+        assert_eq!(cpu.registers.reg_pc.value(), 0x58);
+        let ret = cpu.pop_stack();
+        assert_eq!(ret, 0x100);
+    }
+
+    #[test]
+    #[timeout(10)]
+    fn test_timer_update() {
+        let mem = Arc::new(Mutex::new(Memory::new()));
+        let mut timer = Timer::new(Arc::clone(&mem));
+
+        {
+            let mut m = mem.lock().unwrap();
+            m.ram_startup();
+            m.write_byte(TMC, 0x04); // enable timer, freq = 4096
+            m.write_byte(TIMA, 0x00);
+            m.set_clock_frequency();
+        }
+
+        timer.update_timers(1024);
+
+        let m = mem.lock().unwrap();
+        assert_eq!(m.read_byte(TIMA), 1);
+        assert!(m.timer_counter > 0);
     }
 }

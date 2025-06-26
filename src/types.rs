@@ -105,3 +105,42 @@ pub enum CurrentRamBank {
     Bank2,
     Bank3,
 }
+
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use std::fs::{remove_file, File};
+    use std::io::Write;
+    use ntest::timeout;
+
+    #[test]
+    #[timeout(10)]
+    fn test_load_cartridge_success() {
+        let path = "test_cart.gb";
+        {
+            let mut f = File::create(path).unwrap();
+            f.write_all(&[1u8, 2, 3, 4]).unwrap();
+        }
+
+        let bytes = load_cartridge(path).unwrap();
+        assert_eq!(bytes, 4);
+        let mem = CARTRIDGE_MEMORY.lock().unwrap();
+        assert_eq!(&mem[..4], &[1, 2, 3, 4]);
+        drop(mem);
+        remove_file(path).unwrap();
+    }
+
+    #[test]
+    #[timeout(10)]
+    fn test_load_cartridge_missing() {
+        let res = load_cartridge("nonexistent.gb");
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_current_rom_bank_conversion() {
+        let bank: CurrentRomBank = 5u8.into();
+        assert_eq!(bank.value(), 5);
+    }
+}

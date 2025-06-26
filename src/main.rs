@@ -29,7 +29,7 @@ fn main() -> Result<(), String> {
     let mut event_pump = sdl_context.event_pump()?;
 
     let window = video_subsystem
-        .window("Gameboy Emulator", SCREEN_WIDTH * 5, SCREEN_WIDTH * 5)
+        .window("Gameboy Emulator", SCREEN_WIDTH * 5, SCREEN_HEIGHT * 5)
         .position_centered()
         .build()
         .map_err(|e| e.to_string())?;
@@ -137,7 +137,7 @@ impl Emulator {
         &self,
         texture: &mut sdl2::render::Texture,
     ) -> Result<(), String> {
-        let data = self.screen.buffer;
+        let data = &self.screen.buffer;
         let pitch = SCREEN_WIDTH * 3; // 3 bytes per pixel
 
         if data.len() != (pitch * SCREEN_HEIGHT) as usize {
