@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+use debug_print::debug_println;
+
 use crate::mem::*;
 use crate::types::*;
 
@@ -14,9 +16,14 @@ pub struct Screen {
 }
 
 impl Screen {
-    pub fn new() -> Self {
+    pub fn new(mem: SharedMemory) -> Self {
         // TODO: Initialize the screen buffer
-        unimplemented!()
+        Screen {
+            buffer: [0; (SCREEN_HEIGHT * SCREEN_WIDTH * 3) as usize],
+
+            scanline_counter: 456,
+            device_memory: mem,
+        }
     }
 
     pub fn clear(&mut self, _color: u8) {
@@ -37,6 +44,8 @@ impl Screen {
     pub fn update_screen(&mut self, cycles: i32) {
         //TODO: Create function for updating screen at 60Hz
 
+        debug_println!("Screen update!");
+
         self.set_lcd_status();
 
         if self.is_lcd_enabled() {
@@ -48,6 +57,7 @@ impl Screen {
 
         let mut mem = self.device_memory.lock().unwrap();
 
+        debug_println!("Check scanlines!");
         if self.scanline_counter <= 0 {
             // Time to move onto the next scanline
             let scanline = mem.read_byte(CURRENT_SCANLINE) + 1;
@@ -56,6 +66,7 @@ impl Screen {
             self.scanline_counter = 456;
 
             // we are now in the vertical blank period
+            debug_println!("Current Scanline is {scanline}");
             if scanline == 144 {
                 mem.request_interrupt(0);
             }
@@ -72,9 +83,266 @@ impl Screen {
         }
     }
 
-    fn draw_scanline(&mut self) {}
+    fn draw_scanline(&mut self) {
+        let mem = self.device_memory.lock().unwrap();
+        let control = mem.read_byte(LCD_CONTROL);
+        drop(mem);
+
+        if control & (1 << 7) != 0 {
+            if control & 0x1 != 0 {
+                self.render_tiles(control);
+            }
+
+            if control & 0x2 != 0 {
+                self.render_sprites(control);
+            }
+        }
+    }
+
+    fn render_tiles(&mut self, control: Byte) {
+        let mem = self.device_memory.lock().unwrap();
+
+        let tile_data;
+        let background_memory: Word;
+        let mut unsigned = true;
+
+        // where to draw the visual area and the window
+        let scroll_y = mem.read_byte(0xFF42);
+        let scroll_x = mem.read_byte(0xFF43);
+        let window_y = mem.read_byte(0xFF4A);
+        let window_x = mem.read_byte(0xFF4B) - 7;
+
+        let using_window;
+
+        // is the window enabled?
+        if control & (1 << 5) != 0 {
+            if window_y <= mem.read_byte(CURRENT_SCANLINE) {
+                using_window = true;
+            } else {
+                using_window = false;
+            }
+
+            // which tile data?
+            if control & (1 << 4) != 0 {
+                tile_data = 0x8000;
+            } else {
+                tile_data = 0x8800;
+                unsigned = false;
+            }
+
+            // which background mem?
+            if !using_window {
+                if control & (1 << 3) != 0 {
+                    background_memory = 0x9C00;
+                } else {
+                    background_memory = 0x9800;
+                }
+            } else {
+                if control & (1 << 6) != 0 {
+                    background_memory = 0x9C00;
+                } else {
+                    background_memory = 0x9800;
+                }
+            }
+
+            let y_pos;
+            if !using_window {
+                y_pos = scroll_y + mem.read_byte(CURRENT_SCANLINE);
+            } else {
+                y_pos = mem.read_byte(CURRENT_SCANLINE) - window_y;
+            }
+
+            let tile_row = (y_pos / 8) * 32;
+
+            for pixel in 0..SCREEN_WIDTH as Byte {
+                let mut x_pos = pixel + scroll_x;
+                if using_window {
+                    if pixel >= window_x {
+                        x_pos = pixel - window_x;
+                    }
+                }
+
+                let tile_column = x_pos / 8;
+                let tile_num;
+
+                // TODO: Deal with signage
+                if unsigned {
+                    tile_num = mem.read_byte(
+                        (background_memory + tile_row as Word + tile_column as Word) as Word,
+                    );
+                } else {
+                    tile_num = mem.read_byte(
+                        (background_memory + tile_row as Word + tile_column as Word) as Word,
+                    );
+                }
+
+                let mut tile_location: Word = tile_data;
+
+                if unsigned {
+                    tile_location += tile_num as Word * 16;
+                } else {
+                    tile_location += (tile_num as Word + 128) * 16;
+                }
+
+                let line = (y_pos % 8) * 2;
+                let data1 = mem.read_byte(tile_location + line as Word);
+                let data2 = mem.read_byte(tile_location + line as Word + 1);
+
+                let color_bit: i32 = -1 * ((x_pos as u32 % 8) as i32 - 7);
+                let color_num = ((data2 & (1 << color_bit)) >> color_bit)
+                    | ((data1 & (1 << color_bit)) >> color_bit);
+
+                let color: COLOR = mem.get_color(color_num, 0xFF47);
+                let red;
+                let blue;
+                let green;
+
+                match color {
+                    COLOR::White => {
+                        red = 255;
+                        green = 255;
+                        blue = 255
+                    }
+                    COLOR::LightGrey => {
+                        red = 0xCC;
+                        green = 0xCC;
+                        blue = 0xCC
+                    }
+                    COLOR::DarkGrey => {
+                        red = 0x77;
+                        green = 0x77;
+                        blue = 0x77
+                    }
+                    COLOR::Black => {
+                        red = 0;
+                        green = 0;
+                        blue = 0
+                    }
+                }
+
+                let line = mem.read_byte(CURRENT_SCANLINE);
+                if (line > 143) || (pixel > 159) {
+                    panic!("Invalid print location"); // crash program
+                }
+
+                self.buffer[(line + (3 * pixel)) as usize] = red;
+                self.buffer[(line + (3 * pixel) + 1) as usize] = green;
+                self.buffer[(line + (3 * pixel) + 2) as usize] = blue;
+            }
+        }
+    }
+
+    fn render_sprites(&mut self, control: Byte) {
+        let mem = self.device_memory.lock().unwrap();
+
+        // test if display is enabled
+        if control & 0x2 != 0 {
+            let mut use8x16 = false;
+            if control & 0x4 != 0 {
+                use8x16 = true;
+            }
+
+            for sprite in 0..40 {
+                let index = sprite * 4;
+                let y_pos = mem.read_byte(0xFE00 + index) - 16;
+                let x_pos = mem.read_byte(0xFE00 + index + 1) - 8;
+                let tile_location = mem.read_byte(0xFE00 + index + 2);
+                let attributes = mem.read_byte(0xFE00 + index + 3);
+
+                let y_flip = attributes & (1 << 6) != 0;
+                let x_flip = attributes & (1 << 5) != 0;
+
+                let scanline = mem.read_byte(CURRENT_SCANLINE);
+                let mut y_size = 8;
+
+                if use8x16 {
+                    y_size = 16;
+                }
+
+                if (scanline >= y_pos) && (scanline < (y_pos + y_size)) {
+                    let mut line = (scanline - y_pos) as i32;
+
+                    if y_flip {
+                        line -= y_size as i32;
+                        line *= -1;
+                    }
+
+                    line *= 2;
+                    let data1 =
+                        mem.read_byte((0x8000 + (tile_location as Word * 16)) + line as Word);
+                    let data2 =
+                        mem.read_byte((0x8000 + (tile_location as Word * 16)) + line as Word + 1);
+
+                    for tile_pixel in 7..=0 {
+                        let mut color_bit = tile_pixel as i32;
+
+                        if x_flip {
+                            color_bit -= 7;
+                            color_bit *= -1;
+                        }
+                        let color_num = (((data2 & (1 << color_bit)) >> color_bit) << 1)
+                            | ((data1 & (1 << color_bit)) >> color_bit);
+
+                        let addr = match attributes & (1 << 4) != 0 {
+                            true => 0xFF49,
+                            false => 0xFF48,
+                        };
+
+                        let color = mem.get_color(color_num, addr);
+
+                        if color == COLOR::White {
+                            continue;
+                        }
+
+                        let red;
+                        let blue;
+                        let green;
+
+                        match color {
+                            COLOR::White => {
+                                red = 255;
+                                green = 255;
+                                blue = 255
+                            }
+                            COLOR::LightGrey => {
+                                red = 0xCC;
+                                green = 0xCC;
+                                blue = 0xCC
+                            }
+                            COLOR::DarkGrey => {
+                                red = 0x77;
+                                green = 0x77;
+                                blue = 0x77
+                            }
+                            COLOR::Black => {
+                                red = 0;
+                                green = 0;
+                                blue = 0
+                            }
+                        }
+
+                        let x_pix = 0 - tile_pixel + 7;
+                        let pixel = x_pos + x_pix;
+
+                        if (scanline > 143) || (scanline > 159) {
+                            panic!("Invalid print location"); // crash program
+                        }
+
+                        if attributes&(1<<7) != 0 {
+                            continue; // TODO: Add packground handling
+                        }
+
+                        self.buffer[(scanline + (3 * pixel)) as usize] = red;
+                        self.buffer[(scanline + (3 * pixel) + 1) as usize] = green;
+                        self.buffer[(scanline + (3 * pixel) + 2) as usize] = blue;
+                    }
+                }
+            }
+        }
+    }
 
     fn set_lcd_status(&mut self) {
+        debug_println!("Updating LCD Status!");
         // Gets lock on memory
         let mut mem = self.device_memory.lock().unwrap();
 

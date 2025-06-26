@@ -6,6 +6,7 @@ use std::{
 /// Functions and storage for operating on device memory
 use crate::types::*;
 use debug_print::debug_println;
+use sdl2::pixels::Color;
 
 pub type SharedMemory = Arc<Mutex<Memory>>;
 
@@ -87,6 +88,9 @@ impl Memory {
         } else if addr == CURRENT_SCANLINE {
             // If ever writing to the current scanline always set it to 0
             self.mem[CURRENT_SCANLINE as usize] = 0;
+        } else if addr == DMA_REG {
+            // Game is activating a direct memory access
+            self.dma_transfer(value);
         } else {
             self.mem[addr as usize] = value;
         }
@@ -297,6 +301,54 @@ impl Memory {
         enabled |= interrupt << 1; // Sets the bit of the request
         debug_println!("Enabling Interrupt {}", enabled);
         self.write_byte(IE, enabled);
+    }
+
+    /// Sets sprite into the sprite ram
+    fn dma_transfer(&mut self, value: Byte) {
+        let address: Word = (value as Word) << 8; // source address is data * 100
+        for i in 0..0xA0 {
+            let memory = self.read_byte(address + i);
+            self.write_byte(SPRITE_RAM + i, memory);
+        }
+    }
+
+    pub fn get_color(&self, color_num: Byte, addr: Word) -> COLOR {
+        let palette = self.read_byte(addr);
+
+        let hi;
+        let lo;
+
+        match color_num {
+            0 => {
+                hi = 1;
+                lo = 0
+            }
+            1 => {
+                hi = 3;
+                lo = 2
+            }
+            2 => {
+                hi = 5;
+                lo = 4
+            }
+            3 => {
+                hi = 7;
+                lo = 6
+            }
+            _ => {
+                panic!("Color number invalid")
+            } // this should not be possible
+        }
+
+        let color = (((palette & (1 << hi)) >> hi) << 1) | ((palette & (1 << lo)) >> lo);
+
+        return match color {
+            0 => COLOR::White,
+            1 => COLOR::LightGrey,
+            2 => COLOR::DarkGrey,
+            3 => COLOR::Black,
+            _ => panic!("Invalid color found"), // this should not be possible
+        };
     }
 }
 

@@ -33,8 +33,21 @@ pub const CURRENT_SCANLINE: Word = 0xFF44;
 pub const LCD_STATUS: Word = 0xFF41;
 pub const LCD_CONTROL: Word = 0xFF40;
 pub const COINCIDENCE_FLAG: Word = 0xFF45;
+pub const DMA_REG: Word = 0xFF46;
+pub const SPRITE_RAM: Word = 0xFE00; // from 0xFE00 to OxFE9F
 pub const MODE_2_BOUNDS: i32 = 456 - 80;
 pub const MODE_3_BOUNDS: i32 = MODE_2_BOUNDS - 172;
+pub const MEMORY_REGION: Word = 0x8000; // Graphics memory location
+pub const SIZE_OF_TILE_IN_MEMORY: i32 = 16;
+pub const OFFSET: i32 = 128;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum COLOR {
+    White,
+    LightGrey,
+    DarkGrey,
+    Black,
+}
 
 /// RAM  Device Memory
 pub const MEM_SIZE: usize = 0x10000;

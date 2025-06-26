@@ -113,9 +113,8 @@ pub struct CPU {
 }
 
 impl CPU {
-    pub fn new() -> Self {
+    pub fn new(mem: SharedMemory) -> Self {
         // Creates new mem object on the heap
-        let mem = Arc::new(Mutex::new(Memory::new()));
 
         let cpu = CPU {
             registers: registers::Registers::new(),
@@ -306,7 +305,9 @@ mod test {
     #[test]
     #[timeout(1)]
     fn test_cpu_init() {
-        let cpu = CPU::new();
+        let mem = Arc::new(Mutex::new(Memory::new()));
+
+        let cpu = CPU::new(mem);
 
         assert_eq!(cpu.cycles, 0);
     }
@@ -314,7 +315,8 @@ mod test {
     #[test]
     #[timeout(1)]
     fn test_cpu_interrupts() {
-        let mut cpu = CPU::new();
+        let mem = Arc::new(Mutex::new(Memory::new()));
+        let mut cpu = CPU::new(mem);
 
         assert_eq!(cpu.cycles, 0);
         assert!(cpu.ime);
@@ -336,7 +338,8 @@ mod test {
     #[test]
     #[timeout(1)]
     fn test_push_pop_stack() {
-        let mut cpu = CPU::new();
+        let mem = Arc::new(Mutex::new(Memory::new()));
+        let mut cpu = CPU::new(mem);
 
         cpu.push_stack(cpu.registers.reg_af);
         assert_eq!(cpu.registers.reg_sp.value(), 0xFFFC);
