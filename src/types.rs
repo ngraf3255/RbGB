@@ -106,13 +106,12 @@ pub enum CurrentRamBank {
     Bank3,
 }
 
-
 #[cfg(test)]
 mod test {
     use super::*;
-    use std::fs::{remove_file, File};
-    use std::io::Write;
     use ntest::timeout;
+    use std::fs::{File, remove_file};
+    use std::io::Write;
 
     #[test]
     #[timeout(10)]

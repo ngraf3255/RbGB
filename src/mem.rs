@@ -299,7 +299,7 @@ impl Memory {
         // enabled interrupts. Reading from IF here would incorrectly overwrite
         // the existing enables.
         let mut enabled = self.read_byte(IE);
-        enabled |=  1 << interrupt; // Sets the bit of the request
+        enabled |= 1 << interrupt; // Sets the bit of the request
         debug_println!("Enabling Interrupt {}", enabled);
         self.write_byte(IE, enabled);
     }
@@ -591,12 +591,7 @@ mod test {
     fn test_set_clock_frequency() {
         let mut mem = Memory::new();
 
-        let tests = [
-            (0x0, 1024),
-            (0x1, 16),
-            (0x2, 64),
-            (0x3, 256),
-        ];
+        let tests = [(0x0, 1024), (0x1, 16), (0x2, 64), (0x3, 256)];
 
         for (val, expected) in tests {
             mem.write_byte_forced(TMC, val);
