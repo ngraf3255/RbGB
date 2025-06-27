@@ -38,20 +38,22 @@ Working on a clearer deployment system, likely by implementing the github releas
 
 ## Running Tests
 
-To build and run tests locally:
+Tests run inside the Docker container specified in `Dockerfile`.
+To execute them locally, first build the image and then run it:
 
-1. Clone the repository:
+```bash
+docker build -t rbgb-ci .
+docker run --rm rbgb-ci
+```
 
-    ```bash
-    git clone https://github.com/Hyphen325/rbgb.git
-    cd rbgb
-    ```
+## Continuous Integration
 
-2. Run the tests:
-
-    ```bash
-    cargo test
-    ```
+The GitHub Actions workflow caches Rust build artifacts using
+[Swatinem/rust-cache](https://github.com/Swatinem/rust-cache) to speed up
+compilation. Tests are executed inside the Docker container and the resulting
+image is pushed to Docker Hub whenever the `Dockerfile` changes. Set the
+`DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` secrets in your repository to enable
+publishing.
 
 ## Outstanding Work
 

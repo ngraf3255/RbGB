@@ -9,33 +9,48 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
-        # Linter uses git history
         with:
           fetch-depth: 0
       - name: Pass linter
-        run: |
-          cargo clippy -- -Dwarnings
-        
-  build:
+        run: cargo clippy -- -Dwarnings
+
+  test:
     needs: [lint]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
         with:
-          # Linter uses git history
-          fetch-depth: 0
+          fetch-depth: 2
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
       - name: Build Docker image
         run: docker build -t rbgb-ci .
       - name: Run tests in Docker
-        run: docker run --rm rbgb-ci
-
-  deploy:
-    needs: [build]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Placeholder for deployment to device
         run: |
-          echo "TEST :)"
+          docker run --rm \
+            -v $HOME/.cargo/registry:/usr/local/cargo/registry \
+            -v $HOME/.cargo/git:/usr/local/cargo/git \
+            -v ${{ github.workspace }}/target:/usr/src/rbgb/target \
+            rbgb-ci
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Check if Dockerfile changed
+        id: docker_changed
+        run: |
+          if git diff --name-only HEAD~1 | grep -q '^Dockerfile$'; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Tag image
+        if: steps.docker_changed.outputs.changed == 'true'
+        run: docker tag rbgb-ci ${{ secrets.DOCKERHUB_USERNAME }}/rbgb:${{ github.sha }}
+      - name: Push Docker image
+        if: steps.docker_changed.outputs.changed == 'true'
+        run: docker push ${{ secrets.DOCKERHUB_USERNAME }}/rbgb:${{ github.sha }}
 
 
