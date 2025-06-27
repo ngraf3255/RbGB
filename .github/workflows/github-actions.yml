@@ -44,7 +44,7 @@ jobs:
           if git diff --name-only HEAD~1 | grep -q '^Dockerfile$'; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
           fi
       - name: Tag image
         if: steps.docker_changed.outputs.changed == 'true'

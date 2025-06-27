@@ -1,7 +1,4 @@
-FROM alpine:latest
-
-# Install rust and SDL2
-RUN apk add --no-cache rust cargo build-base sdl2-dev
+FROM ngraf/rbgb:latest
 
 WORKDIR /usr/src/rbgb
 COPY . .
