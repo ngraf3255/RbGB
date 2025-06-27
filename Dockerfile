@@ -1,4 +1,4 @@
-FROM ngraf/rbgb:latest
+FROM ngraf3/rbgb:latest
 
 WORKDIR /usr/src/rbgb
 COPY . .
