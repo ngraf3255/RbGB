@@ -4,7 +4,21 @@ on: [push]
 env:
   CARGO_TERM_COLOR: always
 jobs:
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        # Linter uses git history
+        with:
+          fetch-depth: 0
+      - name: Pass linter
+        run: |
+          cargo clippy -- -Dwarnings
+        
   build:
+  needs: [lint]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -12,28 +26,10 @@ jobs:
         with:
           # Linter uses git history
           fetch-depth: 0
-      - name: Install SDL2
-        run: |
-          sudo add-apt-repository -y "deb http://archive.ubuntu.com/ubuntu `lsb_release -sc` main universe restricted multiverse"
-          sudo apt-get update -y -qq
-          sudo apt-get install libsdl2-dev
-        
-      - name: Pass linter
-        run: |
-          cargo clippy -- -Dwarnings
-      - name: Compile the rust files
-        run: |
-          cargo build --all-targets
-      - name: Run unit tests
-        run: |
-          cargo test
-      - name: Archive code build results
-        uses: actions/upload-artifact@v4
-        with:
-          name: rbgb-build
-          path: target/debug/*
-
-    
+      - name: Build Docker image
+        run: docker build -t rbgb-ci .
+      - name: Run tests in Docker
+        run: docker run --rm rbgb-ci
 
   deploy:
     needs: [build]
