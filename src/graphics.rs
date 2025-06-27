@@ -412,8 +412,6 @@ impl Screen {
     // TODO: Add more methods for drawing, sprites, etc.
 }
 
-
-
 #[cfg(test)]
 mod test {
     use super::*;
