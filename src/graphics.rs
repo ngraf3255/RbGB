@@ -110,7 +110,7 @@ impl Screen {
         let scroll_y = mem.read_byte(0xFF42);
         let scroll_x = mem.read_byte(0xFF43);
         let window_y = mem.read_byte(0xFF4A);
-        let window_x = mem.read_byte(0xFF4B) - 7;
+        let window_x = mem.read_byte(0xFF4B).wrapping_sub(7);
 
         let using_window;
 

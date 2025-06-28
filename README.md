@@ -60,6 +60,7 @@ To build and run tests locally:
 - Modify register system to allow them to be set more gracefully
 - Add DOCKERFILE to containerize (annoyed me when sdl2 wasn't installing)
 - Trim workflow to reflect new docker container
+- Implement custom cpu opcode handling
 
 ## Coding Statistics
 
@@ -78,6 +79,10 @@ Other      0 secs          ░░░░░░░░░░░░░░░░░�
 ```
 
 <!--END_SECTION:waka-->
+
+## Acknowledgements
+
+Much of this was written and based off of [Codeslinger Gameboy](http://www.codeslinger.co.uk/pages/projects/gameboy/beginning.html). This project would not have been possible without the great walkthrough. Additionally, code for cpu instructions was modified from [RZ80](https://floooh.github.io/)
 
 ## License
 

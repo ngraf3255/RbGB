@@ -21,6 +21,38 @@ pub const TMA: Word = 0xFF06;
 pub const TMC: Word = 0xFF07;
 pub const DIVIDER_REGISTER: Word = 0xFF04;
 pub const CLOCKSPEED: u32 = 4194304;
+/// CPU carry flag
+pub const CF: Byte = 1 << 0;
+/// CPU add/subtract flag
+pub const NF: Byte = 1 << 1;
+/// CPU overflow flag (same as parity)
+pub const VF: Byte = 1 << 2;
+/// CPU parity flag (same as overflow)
+pub const PF: Byte = 1 << 2;
+/// CPU undocumented 'X' flag
+pub const XF: Byte = 1 << 3;
+/// CPU half carry flag
+pub const HF: Byte = 1 << 4;
+/// CPU undocumented 'Y' flag
+pub const YF: Byte = 1 << 5;
+/// CPU zero flag
+pub const ZF: Byte = 1 << 6;
+/// CPU sign flag
+pub const SF: Byte = 1 << 7;
+
+pub const BC: usize = 0;
+pub const DE: usize = 2;
+pub const HL: usize = 4;
+pub const AF: usize = 6;
+pub const IX: usize = 8;
+pub const IY: usize = 10;
+pub const SP: usize = 12;
+pub const WZ: usize = 14;
+pub const BC_: usize = 16;
+pub const DE_: usize = 18;
+pub const HL_: usize = 20;
+pub const AF_: usize = 22;
+pub const WZ_: usize = 24;
 
 // Interrupt Constants
 pub const IE: Word = 0xFFFF; // Interrupt enabled register

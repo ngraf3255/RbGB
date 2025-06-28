@@ -293,6 +293,13 @@ impl Memory {
         self.write_byte(IF, request);
     }
 
+    /// Loads the given ROM bytes into memory
+    pub fn load_rom_data(&mut self, data: &[u8]) {
+        let len = data.len().min(MEM_SIZE);
+        self.mem[..len].copy_from_slice(&data[..len]);
+        self.refresh_rom_banking_type();
+    }
+
     /// Enables an interrupt for the CPU to handle
     pub fn enable_interrupt(&mut self, interrupt: Byte) {
         // Use the current value of the IE register to preserve any already
