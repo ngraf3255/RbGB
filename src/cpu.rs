@@ -3,138 +3,9 @@
 use debug_print::debug_println;
 
 use crate::mem::*;
+use crate::registers;
 use crate::types::*;
 use std::sync::{Arc, Mutex};
-
-pub mod registers {
-    use crate::types::*;
-
-    pub const FLAG_Z: Byte = 7;
-    pub const FLAG_N: Byte = 6;
-    pub const FLAG_H: Byte = 5;
-    pub const FLAG_C: Byte = 4;
-
-    // Double check the memory behavior of rust union creation
-    #[derive(Copy, Clone)]
-    struct BitSpace {
-        lo: Byte,
-        hi: Byte,
-    }
-
-    pub struct Registers {
-        pub reg_af: Register,
-        pub reg_bc: Register,
-        pub reg_de: Register,
-        pub reg_hl: Register,
-        pub reg_sp: Register, // Stack pointer
-        pub reg_pc: Register, // Program counter
-    }
-
-    // reg is the comination of the base registers
-    // bitspace lets you select upper 8 bits or lower for indiv regs
-    #[derive(Copy, Clone)]
-    pub union Register {
-        reg: Word,
-        bitspace: BitSpace,
-    }
-
-    impl Register {
-        pub fn new(val: Word) -> Self {
-            Register { reg: val }
-        }
-
-        pub fn set(&mut self, val: Word) {
-            self.reg = val;
-        }
-
-        /// Returns the value in the register
-        pub fn value(&self) -> Word {
-            unsafe { self.reg }
-        }
-
-        /// Gets the upper 4 bits
-        pub fn high_value(&self) -> Byte {
-            unsafe { self.bitspace.hi }
-        }
-
-        /// Gets the lower 4 bits
-        pub fn low_value(&self) -> Byte {
-            unsafe { self.bitspace.lo }
-        }
-
-        /// Decriments the register
-        pub fn decriment(&mut self) {
-            unsafe {
-                self.reg -= 1;
-            }
-        }
-
-        ///Incriments the register
-        pub fn incriment(&mut self) {
-            unsafe {
-                self.reg += 1;
-            }
-        }
-    }
-
-    // Would it be best to not make a reg struct and implement new for it
-    // I'm kinda inconsistant in what I do:
-    // I impl functions for registers but for memory I create global statics
-    //
-    impl Registers {
-        /// Values set are just what the gameboy does on bootup.
-        ///
-        /// For details on what values are set see [gameboy_regs].
-        ///
-        /// [gameboy_regs] = http://www.codeslinger.co.uk/pages/projects/gameboy/hardware.html
-        pub fn new() -> Self {
-            Registers {
-                reg_af: Register { reg: 0x01B0 },
-                reg_bc: Register { reg: 0x0013 },
-                reg_de: Register { reg: 0x00D8 },
-                reg_hl: Register { reg: 0x014D },
-                reg_sp: Register { reg: 0xFFFE },
-                reg_pc: Register { reg: 0x100 },
-            }
-        }
-
-        pub fn get_8bit_reg_by_index(&self, _index: u32 ) -> Register{
-            self.reg_af
-        }
-
-        /// Sets the contents of the f register
-        pub fn set_f(&mut self, val: Byte) {
-            self.reg_af.bitspace.lo = val;
-        }
-
-        /// Gets the contents of the f register
-        pub fn val_f(&self) -> Byte {
-            unsafe { self.reg_af.bitspace.lo }
-        }
-
-        /// Sets the contents of the f register
-        pub fn set_a(&mut self, val: Byte) {
-            self.reg_af.bitspace.hi = val;
-        }
-
-        /// Gets the contents of the a register
-        pub fn val_a(&self) -> Byte {
-            unsafe { self.reg_af.bitspace.hi }
-        }
-
-        #[inline(always)]
-        pub fn dec_pc(&mut self, dec: Word) {
-            self.reg_pc -= dec;
-        }
-
-        #[inline(always)]
-        pub fn inc_pc(&mut self, inc: Word) {
-            self.reg_pc += inc;
-        }
-    }
-}
-
-pub mod instructions {}
 
 #[allow(clippy::upper_case_acronyms)]
 pub struct CPU {
@@ -188,6 +59,33 @@ impl CPU {
         let d = mem.read_byte(pc);
         self.registers.inc_pc(1);
         d
+    }
+
+    #[inline(always)]
+    fn check_condition(&self, y: Byte) -> bool {
+        let f = self.registers.val_f();
+        match y {
+            0 => 0 == f & ZF, // JR NZ
+            1 => 0 != f & ZF, // JR Z
+            2 => 0 == f & CF, // JR NC
+            3 => 0 != f & CF, // JC C
+            4 => 0 == f & PF, // JR PO
+            5 => 0 != f & PF, // JR PE
+            6 => 0 == f & SF, // JR P
+            7 => 0 != f & SF, // JR M
+            _ => false,
+        }
+    }
+
+    /// load 16-bit immediate operand and bump PC
+    #[inline(always)]
+    fn imm16(&mut self) -> Word {
+        let pc = self.registers.val_pc();
+        let mem = self.device_memory.lock().unwrap();
+
+        let imm = mem.read_byte(pc) as Word | (mem.read_byte(pc + 1) << 8) as Word;
+        self.registers.inc_pc(2);
+        imm
     }
 
     // Placeholder for interrupt handling
@@ -273,415 +171,403 @@ impl CPU {
     }
 
     pub fn execute_next_opcode(&mut self, extention: bool) -> u32 {
-
-        let (cycle, extention_cycle) = if extention {
-            (4, 8)
-        } else {
-            (0, 0)
-        };
+        let (cycle, extention_cycle) = if extention { (4, 8) } else { (0, 0) };
 
         let operation = self.step_opcode();
 
         // seems like the best way to do this from online is to do a match case statement
         let x = operation >> 6;
-        let y= operation >> 3 & 7;
-        let z = operation&7;
+        let y = operation >> 3 & 7;
+        let z = operation & 7;
 
         //let mem = self.device_memory.lock().unwrap();
 
-        cycle + match (x, y, z) {
-            // --- block 1: 8-bit loads
-            // special case LD (HL),(HL): HALT
-            (1, 6, 6) => {
-                self.halt();
-                4
-            }
-            // LD (HL),r; LD (IX+d),r; LD (IY+d),r
-            // NOTE: this always loads from H,L, never IXH, ...
-            (1, 6, _) => {
-                let a = self.load_addr(extention);
-                let v = self.registers.get_reg8_by_index(z);
-                self.device_memory.lock().unwrap().write_byte(a, v);
-                7 + extention_cycle
-            }
-            // LD r,(HL); LD r,(IX+d); LD r,(IY+d)
-            // NOTE: this always loads to H,L, never IXH,...
-            (1, _, 6) => {
-                let a = self.load_addr(extention);
-                let v = self.device_memory.lock.unwrap().read_byte(a);
-                self.set_reg8_by_index(y, v);
-                7 + extention_cycle
-            }
-            // LD r,s
-            (1, _, _) => {
-                let v = self.registers.get_reg8_by_index(z);
-                self.registers.set_reg8_by_index(y, v);
-                4
-            }
-            // --- block 2: 8-bit ALU instructions
-            // ALU (HL); ALU (IX+d); ALU (IY+d)
-            (2, _, _) => {
-                if z == 6 {
-                    // ALU (HL); ALU (IX+d); ALU (IY+d)
-                    let a = self.load_addr(extention);
-                    let val = self.device_memory.lock().unwrap().read_byte(a);
-                    self.alu8(y, val);
-                    7 + extention_cycle
-                } else {
-                    // ALU r
-                    let val = self.registers.get_8bit_reg_by_index(z);
-                    self.alu8(y, val);
+        cycle
+            + match (x, y, z) {
+                // --- block 1: 8-bit loads
+                // special case LD (HL),(HL): HALT
+                (1, 6, 6) => {
+                    self.halt();
                     4
                 }
-            }
-            // --- block 0: misc ops
-            // NOP
-            (0, 0, 0) => 4,
-            // EX AF,AF'
-            (0, 1, 0) => {
-                self.registers.swap(AF, AF_); // TODO: Change out swap
-                4
-            }
-            // DJNZ
-            (0, 2, 0) => self.djnz(),
-            // JR d
-            (0, 3, 0) => {
-                let pc = self.registers.pc();
-                let wz = pc + self.mem.rs8(pc) + 1;
-                self.registers.set_pc(wz);
-                self.registers.set_wz(wz);
-                12
-            }
-            // JR cc
-            (0, _, 0) => {
-                let pc = self.registers.pc();
-                if self.cc(y - 4) {
-                    let wz = pc + self.mem.rs8(pc) + 1;
+                // LD (HL),r; LD (IX+d),r; LD (IY+d),r
+                // NOTE: this always loads from H,L, never IXH, ...
+                (1, 6, _) => {
+                    let a = self.load_addr(extention);
+                    let v = self.registers.get_reg8_by_index(z);
+                    self.device_memory.lock().unwrap().write_byte(a, v);
+                    7 + extention_cycle
+                }
+                // LD r,(HL); LD r,(IX+d); LD r,(IY+d)
+                // NOTE: this always loads to H,L, never IXH,...
+                (1, _, 6) => {
+                    let a = self.load_addr(extention);
+                    let v = self.device_memory.lock().unwrap().read_byte(a);
+                    self.registers.set_reg8_by_index(y, v);
+                    7 + extention_cycle
+                }
+                // LD r,s
+                (1, _, _) => {
+                    let v = self.registers.get_reg8_by_index(z);
+                    self.registers.set_reg8_by_index(y, v);
+                    4
+                }
+                // --- block 2: 8-bit ALU instructions
+                // ALU (HL); ALU (IX+d); ALU (IY+d)
+                (2, _, _) => {
+                    if z == 6 {
+                        // ALU (HL); ALU (IX+d); ALU (IY+d)
+                        let a = self.load_addr(extention);
+                        let val = self.device_memory.lock().unwrap().read_byte(a);
+                        self.alu8(y, val);
+                        7 + extention_cycle
+                    } else {
+                        // ALU r
+                        let val = self.registers.get_reg8_by_index(z);
+                        self.alu8(y.into(), val);
+                        4
+                    }
+                }
+                // --- block 0: misc ops
+                // NOP
+                (0, 0, 0) => 4,
+                // EX AF,AF'
+                (0, 1, 0) => {
+                    self.registers.swap(AF, AF_); // TODO: Change out swap
+                    4
+                }
+                // DJNZ
+                (0, 2, 0) => self.djnz(),
+                // JR d
+                (0, 3, 0) => {
+                    let pc = self.registers.val_pc();
+                    let wz = pc + self.device_memory.lock().unwrap().read_byte(pc) as Word + 1;
                     self.registers.set_pc(wz);
                     self.registers.set_wz(wz);
                     12
-                } else {
-                    self.registers.inc_pc(1);
+                }
+                // JR cc
+                (0, _, 0) => {
+                    let pc = self.registers.val_pc();
+                    if self.check_condition(y - 4) {
+                        let wz = pc + self.device_memory.lock().unwrap().read_byte(pc) as Word + 1;
+                        self.registers.set_pc(wz);
+                        self.registers.set_wz(wz);
+                        12
+                    } else {
+                        self.registers.inc_pc(1);
+                        7
+                    }
+                }
+                // 16-bit immediate loads and 16-bit ADD
+                (0, _, 1) => {
+                    let p = y >> 1;
+                    let q = y & 1;
+                    if q == 0 {
+                        // LD rr,nn (inkl IX,IY)
+                        let val = self.imm16();
+                        self.registers.set_r16sp(p, val);
+                        10
+                    } else {
+                        // ADD HL,rr; ADD IX,rr; ADD IY,rr
+                        let acc = self.registers.r16sp(2);
+                        let val = self.registers.r16sp(p);
+                        let res = self.add16(acc, val);
+                        self.registers.set_r16sp(2, res);
+                        11
+                    }
+                }
+                (0, _, 2) => {
+                    // indirect loads
+                    let p = y >> 1;
+                    let q = y & 1;
+                    match (q, p) {
+                        // LD (nn),HL; LD (nn),IX; LD (nn),IY
+                        (0, 2) => {
+                            let addr = self.imm16();
+                            let v = self.registers.r16sp(2);
+                            let mem = self.device_memory.lock().unwrap()
+                            mem.write_word(addr, v);
+                            self.registers.set_wz(addr + 1);
+                            16
+                        }
+                        // LD (nn),A
+                        (0, 3) => {
+                            let addr = self.imm16();
+                            let a = self.registers.a();
+                            self.mem.w8(addr, a);
+                            self.registers.set_wz(addr + 1);
+                            13
+                        }
+                        // LD (BC),A; LD (DE),A,; LD (nn),A
+                        (0, _) => {
+                            let addr = if p == 0 {
+                                self.registers.bc()
+                            } else {
+                                self.registers.de()
+                            };
+                            let a = self.registers.a();
+                            self.mem.w8(addr, a);
+                            self.registers.set_wz(a << 8 | ((addr + 1) & 0xFF));
+                            7
+                        }
+                        // LD HL,(nn); LD IX,(nn); LD IY,(nn)
+                        (1, 2) => {
+                            let addr = self.imm16();
+                            let val = self.mem.r16(addr);
+                            self.registers.set_r16sp(2, val);
+                            self.registers.set_wz(addr + 1);
+                            16
+                        }
+                        // LD A,(nn)
+                        (1, 3) => {
+                            let addr = self.imm16();
+                            let val = self.mem.r8(addr);
+                            self.registers.set_a(val);
+                            self.registers.set_wz(addr + 1);
+                            13
+                        }
+                        // LD A,(BC); LD A,(DE)
+                        (1, _) => {
+                            let addr = if p == 0 {
+                                self.registers.bc()
+                            } else {
+                                self.registers.de()
+                            };
+                            let val = self.mem.r8(addr);
+                            self.registers.set_a(val);
+                            self.registers.set_wz(addr + 1);
+                            7
+                        }
+                        (_, _) => unreachable!(),
+                    }
+                }
+                (0, _, 3) => {
+                    // 16-bit INC/DEC
+                    let p = y >> 1;
+                    let q = y & 1;
+                    let val = self.registers.r16sp(p) + if q == 0 { 1 } else { -1 };
+                    self.registers.set_r16sp(p, val);
+                    6
+                }
+                // INC (HL); INC (IX+d); INC (IY+d)
+                (0, 6, 4) => {
+                    let addr = self.addr(ext);
+                    let v = self.mem.r8(addr);
+                    let w = self.inc8(v);
+                    self.mem.w8(addr, w);
+                    11 + ext_cyc
+                }
+                // INC r
+                (0, _, 4) => {
+                    let v = self.registers.r8(y);
+                    let w = self.inc8(v);
+                    self.registers.set_r8(y, w);
+                    4
+                }
+                // DEC (HL); DEC (IX+d); DEC (IY+d)
+                (0, 6, 5) => {
+                    let addr = self.addr(ext);
+                    let v = self.mem.r8(addr);
+                    let w = self.dec8(v);
+                    self.mem.w8(addr, w);
+                    11 + ext_cyc
+                }
+                // DEC r
+                (0, _, 5) => {
+                    let v = self.registers.r8(y);
+                    let w = self.dec8(v);
+                    self.registers.set_r8(y, w);
+                    4
+                }
+                // LD r,n; LD (HL),n; LD (IX+d),n; LD (IY+d),n
+                (0, _, 6) => {
+                    if y == 6 {
+                        // LD (HL),n; LD (IX+d),n; LD (IY+d),n
+                        let addr = self.addr(ext);
+                        let v = self.imm8();
+                        self.mem.w8(addr, v);
+                        if ext { 15 } else { 10 }
+                    } else {
+                        // LD r,n
+                        let v = self.imm8();
+                        self.registers.set_r8(y, v);
+                        7
+                    }
+                }
+                // misc ops on A and F
+                (0, _, 7) => {
+                    match y {
+                        0 => self.rlca8(),
+                        1 => self.rrca8(),
+                        2 => self.rla8(),
+                        3 => self.rra8(),
+                        4 => self.daa(),
+                        5 => self.cpl(),
+                        6 => self.scf(),
+                        7 => self.ccf(),
+                        _ => unreachable!(),
+                    }
+                    4
+                }
+                // --- block 3: misc and prefixed ops
+                (3, _, 0) => {
+                    // RET cc
+                    self.retcc(y)
+                }
+                (3, _, 1) => {
+                    let p = y >> 1;
+                    let q = y & 1;
+                    match (q, p) {
+                        (0, _) => {
+                            // POP BC,DE,HL,IX,IY
+                            let val = self.pop();
+                            self.registers.set_r16af(p, val);
+                            10
+                        }
+                        (1, 0) => {
+                            // RET
+                            self.ret()
+                        }
+                        (1, 1) => {
+                            // EXX
+                            self.registers.swap(BC, BC_);
+                            self.registers.swap(DE, DE_);
+                            self.registers.swap(HL, HL_);
+                            self.registers.swap(WZ, WZ_);
+                            4
+                        }
+                        (1, 2) => {
+                            // JP HL; JP IX; JP IY
+                            let v = self.registers.r16sp(2);
+                            self.registers.set_pc(v);
+                            4
+                        }
+                        (1, 3) => {
+                            // LD SP,HL, LD SP,IX; LD SP,IY
+                            let v = self.registers.r16sp(2);
+                            self.registers.set_sp(v);
+                            6
+                        }
+                        (_, _) => unreachable!(),
+                    }
+                }
+                (3, _, 2) => {
+                    // JP cc,nn
+                    let nn = self.imm16();
+                    self.registers.set_wz(nn);
+                    if self.cc(y) {
+                        self.registers.set_pc(nn);
+                    }
+                    10
+                }
+                (3, _, 3) => {
+                    // misc ops
+                    match y {
+                        0 => {
+                            // JP nn
+                            let nn = self.imm16();
+                            self.registers.set_wz(nn);
+                            self.registers.set_pc(nn);
+                            10
+                        }
+                        1 => self.do_cb_op(ext),
+                        2 => {
+                            // OUT (n),A
+                            let a = self.registers.a();
+                            let port = (a << 8 | self.imm8()) & 0xFFFF;
+                            self.outp(bus, port, a);
+                            11
+                        }
+                        3 => {
+                            // IN A,(n)
+                            let port = (self.registers.a() << 8 | self.imm8()) & 0xFFFF;
+                            let v = self.inp(bus, port);
+                            self.registers.set_a(v);
+                            11
+                        }
+                        4 => {
+                            // EX (SP),HL; EX (SP),IX; EX (SP),IY
+                            let sp = self.registers.sp();
+                            let v_reg = self.registers.r16sp(2);
+                            let v_mem = self.mem.r16(sp);
+                            self.mem.w16(sp, v_reg);
+                            self.registers.set_wz(v_mem);
+                            self.registers.set_r16sp(2, v_mem);
+                            19
+                        }
+                        5 => {
+                            // EX DE,HL
+                            self.registers.swap(DE, HL);
+                            4
+                        }
+                        6 => {
+                            // DI
+                            self.iff1 = false;
+                            self.iff2 = false;
+                            4
+                        }
+                        7 => {
+                            // EI
+                            self.enable_interrupt = true;
+                            4
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+                (3, _, 4) => {
+                    // CALL cc
+                    self.callcc(y)
+                }
+                (3, _, 5) => {
+                    let p = y >> 1;
+                    let q = y & 1;
+                    match (q, p) {
+                        (0, _) => {
+                            // PUSH BC,DE,HL,IX,IY,AF
+                            let v = self.registers.r16af(p);
+                            self.push(v);
+                            11
+                        }
+                        (1, 0) => {
+                            // CALL nn
+                            self.call()
+                        }
+                        (1, 1) => {
+                            // DD prefix instructions
+                            self.registers.patch_ix();
+                            let cycles = self.do_op(bus, true);
+                            self.registers.unpatch();
+                            cycles
+                        }
+                        (1, 2) => {
+                            // ED prefix instructions
+                            self.do_ed_op(bus)
+                        }
+                        (1, 3) => {
+                            // FD prefix instructions
+                            self.registers.patch_iy();
+                            let cycles = self.do_op(bus, true);
+                            self.registers.unpatch();
+                            cycles
+                        }
+                        (_, _) => unreachable!(),
+                    }
+                }
+                // ALU n
+                (3, _, 6) => {
+                    let val = self.imm8();
+                    self.alu8(y, val);
                     7
                 }
-            }
-            // 16-bit immediate loads and 16-bit ADD
-            (0, _, 1) => {
-                let p = y >> 1;
-                let q = y & 1;
-                if q == 0 {
-                    // LD rr,nn (inkl IX,IY)
-                    let val = self.imm16();
-                    self.registers.set_r16sp(p, val);
-                    10
-                } else {
-                    // ADD HL,rr; ADD IX,rr; ADD IY,rr
-                    let acc = self.registers.r16sp(2);
-                    let val = self.registers.r16sp(p);
-                    let res = self.add16(acc, val);
-                    self.registers.set_r16sp(2, res);
+                // RST
+                (3, _, 7) => {
+                    self.rst((y * 8) as Byte);
                     11
                 }
+                // not implemented
+                _ => panic!("Invalid instruction!"),
             }
-            (0, _, 2) => {
-                // indirect loads
-                let p = y >> 1;
-                let q = y & 1;
-                match (q, p) {
-                    // LD (nn),HL; LD (nn),IX; LD (nn),IY
-                    (0, 2) => {
-                        let addr = self.imm16();
-                        let v = self.registers.r16sp(2);
-                        self.mem.w16(addr, v);
-                        self.registers.set_wz(addr + 1);
-                        16
-                    }
-                    // LD (nn),A
-                    (0, 3) => {
-                        let addr = self.imm16();
-                        let a = self.registers.a();
-                        self.mem.w8(addr, a);
-                        self.registers.set_wz(addr + 1);
-                        13
-                    }
-                    // LD (BC),A; LD (DE),A,; LD (nn),A
-                    (0, _) => {
-                        let addr = if p == 0 {
-                            self.registers.bc()
-                        } else {
-                            self.registers.de()
-                        };
-                        let a = self.registers.a();
-                        self.mem.w8(addr, a);
-                        self.registers.set_wz(a << 8 | ((addr + 1) & 0xFF));
-                        7
-                    }
-                    // LD HL,(nn); LD IX,(nn); LD IY,(nn)
-                    (1, 2) => {
-                        let addr = self.imm16();
-                        let val = self.mem.r16(addr);
-                        self.registers.set_r16sp(2, val);
-                        self.registers.set_wz(addr + 1);
-                        16
-                    }
-                    // LD A,(nn)
-                    (1, 3) => {
-                        let addr = self.imm16();
-                        let val = self.mem.r8(addr);
-                        self.registers.set_a(val);
-                        self.registers.set_wz(addr + 1);
-                        13
-                    }
-                    // LD A,(BC); LD A,(DE)
-                    (1, _) => {
-                        let addr = if p == 0 {
-                            self.registers.bc()
-                        } else {
-                            self.registers.de()
-                        };
-                        let val = self.mem.r8(addr);
-                        self.registers.set_a(val);
-                        self.registers.set_wz(addr + 1);
-                        7
-                    }
-                    (_, _) => unreachable!(),
-                }
-            }
-            (0, _, 3) => {
-                // 16-bit INC/DEC
-                let p = y >> 1;
-                let q = y & 1;
-                let val = self.registers.r16sp(p) +
-                          if q == 0 {
-                    1
-                } else {
-                    -1
-                };
-                self.registers.set_r16sp(p, val);
-                6
-            }
-            // INC (HL); INC (IX+d); INC (IY+d)
-            (0, 6, 4) => {
-                let addr = self.addr(ext);
-                let v = self.mem.r8(addr);
-                let w = self.inc8(v);
-                self.mem.w8(addr, w);
-                11 + ext_cyc
-            }
-            // INC r
-            (0, _, 4) => {
-                let v = self.registers.r8(y);
-                let w = self.inc8(v);
-                self.registers.set_r8(y, w);
-                4
-            }
-            // DEC (HL); DEC (IX+d); DEC (IY+d)
-            (0, 6, 5) => {
-                let addr = self.addr(ext);
-                let v = self.mem.r8(addr);
-                let w = self.dec8(v);
-                self.mem.w8(addr, w);
-                11 + ext_cyc
-            }
-            // DEC r
-            (0, _, 5) => {
-                let v = self.registers.r8(y);
-                let w = self.dec8(v);
-                self.registers.set_r8(y, w);
-                4
-            }
-            // LD r,n; LD (HL),n; LD (IX+d),n; LD (IY+d),n
-            (0, _, 6) => {
-                if y == 6 {
-                    // LD (HL),n; LD (IX+d),n; LD (IY+d),n
-                    let addr = self.addr(ext);
-                    let v = self.imm8();
-                    self.mem.w8(addr, v);
-                    if ext {
-                        15
-                    } else {
-                        10
-                    }
-                } else {
-                    // LD r,n
-                    let v = self.imm8();
-                    self.registers.set_r8(y, v);
-                    7
-                }
-            }
-            // misc ops on A and F
-            (0, _, 7) => {
-                match y {
-                    0 => self.rlca8(),
-                    1 => self.rrca8(),
-                    2 => self.rla8(),
-                    3 => self.rra8(),
-                    4 => self.daa(),
-                    5 => self.cpl(),
-                    6 => self.scf(),
-                    7 => self.ccf(),
-                    _ => unreachable!(),
-                }
-                4
-            }
-            // --- block 3: misc and prefixed ops
-            (3, _, 0) => {
-                // RET cc
-                self.retcc(y)
-            }
-            (3, _, 1) => {
-                let p = y >> 1;
-                let q = y & 1;
-                match (q, p) {
-                    (0, _) => {
-                        // POP BC,DE,HL,IX,IY
-                        let val = self.pop();
-                        self.registers.set_r16af(p, val);
-                        10
-                    }
-                    (1, 0) => {
-                        // RET
-                        self.ret()
-                    }
-                    (1, 1) => {
-                        // EXX
-                        self.registers.swap(BC, BC_);
-                        self.registers.swap(DE, DE_);
-                        self.registers.swap(HL, HL_);
-                        self.registers.swap(WZ, WZ_);
-                        4
-                    }
-                    (1, 2) => {
-                        // JP HL; JP IX; JP IY
-                        let v = self.registers.r16sp(2);
-                        self.registers.set_pc(v);
-                        4
-                    }
-                    (1, 3) => {
-                        // LD SP,HL, LD SP,IX; LD SP,IY
-                        let v = self.registers.r16sp(2);
-                        self.registers.set_sp(v);
-                        6
-                    }
-                    (_, _) => unreachable!(),
-                }
-            }
-            (3, _, 2) => {
-                // JP cc,nn
-                let nn = self.imm16();
-                self.registers.set_wz(nn);
-                if self.cc(y) {
-                    self.registers.set_pc(nn);
-                }
-                10
-            }
-            (3, _, 3) => {
-                // misc ops
-                match y {
-                    0 => {
-                        // JP nn
-                        let nn = self.imm16();
-                        self.registers.set_wz(nn);
-                        self.registers.set_pc(nn);
-                        10
-                    }
-                    1 => self.do_cb_op(ext),
-                    2 => {
-                        // OUT (n),A
-                        let a = self.registers.a();
-                        let port = (a << 8 | self.imm8()) & 0xFFFF;
-                        self.outp(bus, port, a);
-                        11
-                    }
-                    3 => {
-                        // IN A,(n)
-                        let port = (self.registers.a() << 8 | self.imm8()) & 0xFFFF;
-                        let v = self.inp(bus, port);
-                        self.registers.set_a(v);
-                        11
-                    }
-                    4 => {
-                        // EX (SP),HL; EX (SP),IX; EX (SP),IY
-                        let sp = self.registers.sp();
-                        let v_reg = self.registers.r16sp(2);
-                        let v_mem = self.mem.r16(sp);
-                        self.mem.w16(sp, v_reg);
-                        self.registers.set_wz(v_mem);
-                        self.registers.set_r16sp(2, v_mem);
-                        19
-                    }
-                    5 => {
-                        // EX DE,HL
-                        self.registers.swap(DE, HL);
-                        4
-                    }
-                    6 => {
-                        // DI
-                        self.iff1 = false;
-                        self.iff2 = false;
-                        4
-                    }
-                    7 => {
-                        // EI
-                        self.enable_interrupt = true;
-                        4
-                    }
-                    _ => unreachable!(),
-                }
-            }
-            (3, _, 4) => {
-                // CALL cc
-                self.callcc(y)
-            }
-            (3, _, 5) => {
-                let p = y >> 1;
-                let q = y & 1;
-                match (q, p) {
-                    (0, _) => {
-                        // PUSH BC,DE,HL,IX,IY,AF
-                        let v = self.registers.r16af(p);
-                        self.push(v);
-                        11
-                    }
-                    (1, 0) => {
-                        // CALL nn
-                        self.call()
-                    }
-                    (1, 1) => {
-                        // DD prefix instructions
-                        self.registers.patch_ix();
-                        let cycles = self.do_op(bus, true);
-                        self.registers.unpatch();
-                        cycles
-                    }
-                    (1, 2) => {
-                        // ED prefix instructions
-                        self.do_ed_op(bus)
-                    }
-                    (1, 3) => {
-                        // FD prefix instructions
-                        self.registers.patch_iy();
-                        let cycles = self.do_op(bus, true);
-                        self.registers.unpatch();
-                        cycles
-                    }
-                    (_, _) => unreachable!(),
-                }
-            }
-            // ALU n
-            (3, _, 6) => {
-                let val = self.imm8();
-                self.alu8(y, val);
-                7
-            }
-            // RST
-            (3, _, 7) => {
-                self.rst((y * 8) as Byte);
-                11
-            }
-            // not implemented
-            _ => panic!("Invalid instruction!")
-        }
     }
 
     pub fn djnz(&mut self) -> i64 {
@@ -693,16 +579,16 @@ impl CPU {
             let wz = addr + d + 1;
             self.registers.set_wz(wz);
             self.registers.set_pc(wz);
-            13  // return num cycles if branch taken
+            13 // return num cycles if branch taken
         } else {
             let pc = self.registers.val_pc() + 1;
             self.registers.set_pc(pc);
-            8   // return num cycles if loop finished
+            8 // return num cycles if loop finished
         }
     }
 
     /// fetch and execute ED prefix instruction
-    fn do_ed_op(&mut self, bus: &dyn Bus) -> i64 {
+    fn do_ed_op(&mut self,) -> i64 {
         let op = self.fetch_op();
 
         // split instruction byte into bit groups
@@ -833,18 +719,18 @@ impl CPU {
                     3 | 7 => {
                         self.registers.im = 2;
                     }
-                    _ => unreachable!()
+                    _ => unreachable!(),
                 }
                 8
             }
             (1, 0, 7) => {
                 self.registers.i = self.registers.a();
                 9
-            }   // LD I,A
+            } // LD I,A
             (1, 1, 7) => {
                 self.registers.r = self.registers.a();
                 9
-            }   // LD R,A
+            } // LD R,A
             (1, 2, 7) => {
                 // LD A,I
                 let i = self.registers.i;
@@ -864,20 +750,18 @@ impl CPU {
             (1, 4, 7) => {
                 self.rrd();
                 18
-            }    // RRD
+            } // RRD
             (1, 5, 7) => {
                 self.rld();
                 18
-            }    // RLD
-            (1, _, 7) => 9,     // NOP (ED)
+            } // RLD
+            (1, _, 7) => 9, // NOP (ED)
             _ => panic!("CB: Invalid instruction!"),
         }
-        
-        
     }
 
     /// Gets the opcode at the PC and incriments it by one
-    fn step_opcode(&mut self) -> Byte{
+    fn step_opcode(&mut self) -> Byte {
         let mem = self.device_memory.lock().unwrap();
 
         let opcode = mem.read_byte_forced(self.registers.reg_pc.value());
@@ -892,7 +776,7 @@ impl CPU {
         self.registers.dec_pc(1);
     }
 
-    fn alu8(&mut self, alu: usize, val: Byte) {
+    fn alu8(&mut self, alu: Byte, val: Byte) {
         match alu {
             0 => self.add8(val),
             1 => self.adc8(val),
@@ -902,7 +786,7 @@ impl CPU {
             5 => self.xor8(val),
             6 => self.or8(val),
             7 => self.cp8(val),
-            _ => unreachable!() 
+            _ => unreachable!(),
         }
     }
 
@@ -973,18 +857,25 @@ impl CPU {
         self.registers.set_f(flags_szp(res));
     }
 
-    fn load_addr(&mut self, extention: bool) -> Byte {
+    fn load_addr(&mut self, extention: bool) -> Word {
         if extention {
-            let addr = (self.registers.r16sp(2) + self.d()) & 0xFFFF;
-            self.reg.set_wz(addr);
+            let addr = (self.registers.get_16b_sp_reg(2) + self.d()) & 0xFFFF;
+            self.registers.set_wz(addr);
             addr
         } else {
-            self.reg.hl()
+            self.registers.val_hl()
         }
     }
 
-    
-
+    #[inline(always)]
+    pub fn add16(&mut self, acc: Word, add: Word) -> Word {
+        self.registers.set_wz(acc + 1);
+        let res = acc + add;
+        let f = (self.registers.val_f() & (SF | ZF | VF)) | (((acc ^ res ^ add) >> 8) as Byte & HF) |
+                ((res >> 16) as Byte & CF) | ((res >> 8) as Byte & (YF | XF));
+        self.registers.set_f(f);
+        res & 0xFFFF
+    }
 }
 
 /// Memory wrapper class that implements functions to update and run timers
@@ -1054,11 +945,7 @@ impl Timer {
         // Test bit 2
         tmc_reg & 0x4 != 0
     }
-
-    
 }
-
-
 
 #[cfg_attr(rustfmt, rustfmt_skip)]
 fn flags_add(acc: Byte, add: Byte, res: Byte) -> Byte {
@@ -1093,8 +980,7 @@ fn flags_szp(val: Byte) -> Byte {
 
 #[inline(always)]
 fn flags_sziff2(val: Byte, iff2: bool) -> Byte {
-    (if (val & 0xFF) == 0 {ZF} else {val & SF}) |
-    (val & (YF | XF)) | if iff2 {PF} else {0}
+    (if (val & 0xFF) == 0 { ZF } else { val & SF }) | (val & (YF | XF)) | if iff2 { PF } else { 0 }
 }
 
 #[cfg(test)]

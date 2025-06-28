@@ -105,6 +105,14 @@ impl Memory {
         self.mem[addr as usize] = value;
     }
 
+    ///Function to write a word
+    pub fn write_word(&mut self, addr: Word, value: Word) {
+        let l = value & 0xff;
+        let h = (value >> 8) & 0xff;
+        self.write_byte(addr, l as Byte);
+        self.write_byte(addr + 1, h as Byte);
+    }
+
     ///Wrapper for forced memory reading
     ///
     /// Be careful as there are no bounds on providing the wrong mem index
@@ -358,6 +366,8 @@ impl Memory {
             _ => panic!("Invalid color found"), // this should not be possible
         }
     }
+
+
 }
 
 #[cfg(test)]

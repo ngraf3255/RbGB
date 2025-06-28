@@ -40,19 +40,21 @@ pub const ZF: Byte = 1 << 6;
 /// CPU sign flag
 pub const SF: Byte = 1 << 7;
 
-pub const BC: usize = 0;
-pub const DE: usize = 2;
-pub const HL: usize = 4;
-pub const AF: usize = 6;
-pub const IX: usize = 8;
-pub const IY: usize = 10;
-pub const SP: usize = 12;
-pub const WZ: usize = 14;
-pub const BC_: usize = 16;
-pub const DE_: usize = 18;
-pub const HL_: usize = 20;
-pub const AF_: usize = 22;
-pub const WZ_: usize = 24;
+pub const BC: Byte = 0;
+pub const DE: Byte = 2;
+pub const HL: Byte = 4;
+pub const AF: Byte = 6;
+pub const IX: Byte = 8;
+pub const IY: Byte = 10;
+pub const SP: Byte = 12;
+pub const WZ: Byte = 14;
+pub const BC_: Byte = 16;
+pub const DE_: Byte = 18;
+pub const HL_: Byte = 20;
+pub const AF_: Byte = 22;
+pub const WZ_: Byte = 24;
+
+pub const SP_TABLE: [Byte; 4] = [BC, DE, HL, SP]; //TODO: Change to localize as global so compiler doesn't inline the table
 
 // Interrupt Constants
 pub const IE: Word = 0xFFFF; // Interrupt enabled register

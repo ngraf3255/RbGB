@@ -16,6 +16,7 @@ use types::{SCREEN_HEIGHT, SCREEN_WIDTH};
 mod cpu;
 mod graphics;
 mod mem;
+mod registers;
 mod sound;
 mod types;
 
@@ -52,12 +53,18 @@ fn main() -> Result<(), String> {
 
         // Handle events
         for event in event_pump.poll_iter() {
-             match event {
+            match event {
                 Event::Quit { .. } => break 'running,
-                Event::KeyDown { keycode: Some(Keycode::P), .. } => {
+                Event::KeyDown {
+                    keycode: Some(Keycode::P),
+                    ..
+                } => {
                     emulator.toggle_pause();
                 }
-                Event::KeyDown { keycode: Some(Keycode::L), .. } => {
+                Event::KeyDown {
+                    keycode: Some(Keycode::L),
+                    ..
+                } => {
                     println!("Enter path to ROM:");
                     let mut path = String::new();
                     std::io::stdin().read_line(&mut path).unwrap();
