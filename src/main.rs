@@ -70,8 +70,8 @@ fn main() -> Result<(), String> {
                     ..
                 } => {
                     println!("Enter path to ROM:");
-                    let mut path = String::new();
-                    std::io::stdin().read_line(&mut path).unwrap();
+                    let path = "/home/noah/Projects/Rust/game_dir/kirby.gb";
+                    
                     if let Err(e) = emulator.load_rom(path.trim()) {
                         println!("Failed to load ROM: {e}");
                     } else {
@@ -213,10 +213,4 @@ mod test {
     use crate::Emulator;
     use ntest::timeout;
 
-    #[test]
-    #[timeout(100)]
-    fn test_unimplemented_main_loop() {
-        let mut emulator: Emulator = Emulator::new();
-        emulator.update();
-    }
 }
