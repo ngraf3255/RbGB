@@ -36,12 +36,13 @@ impl CPU {
     }
 
     pub fn reset(&mut self) {
-        let mem = Arc::new(Mutex::new(Memory::new()));
         self.registers = registers::Registers::new();
-        self.device_memory = Arc::clone(&mem);
         self.halted = false;
         self.ime = true;
         self.cycles = 0;
+
+        let mut mem = self.device_memory.lock().unwrap();
+        mem.ram_startup();
     }
 
     pub fn step(&mut self) {
@@ -588,7 +589,7 @@ impl CPU {
     }
 
     pub fn djnz(&mut self) -> i64 {
-        let b = (self.registers.val_b() - 1) & 0xFF;
+        let b = (self.registers.val_b().wrapping_sub(1)) & 0xFF;
         self.registers.set_b(b);
         if b > 0 {
             let addr = self.registers.val_pc();
@@ -1230,7 +1231,7 @@ impl CPU {
         let wz = self.device_memory.lock().unwrap().read_word(sp);
         self.registers.set_wz(wz);
         self.registers.set_pc(wz);
-        self.registers.set_sp(sp + 2);
+        self.registers.set_sp(sp.wrapping_add(2));
         10
     }
 
@@ -1851,7 +1852,7 @@ mod test {
         assert_eq!(cpu.cycles, 0);
         assert!(cpu.ime);
         assert_eq!(cpu.registers.reg_af.value(), 0x01B0);
-        assert!(!Arc::ptr_eq(&old_mem, &cpu.device_memory));
+        assert!(Arc::ptr_eq(&old_mem, &cpu.device_memory));
         let new_mem = cpu.device_memory.lock().unwrap();
         assert_eq!(new_mem.read_byte(TIMA), 0);
     }
