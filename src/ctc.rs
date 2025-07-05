@@ -1,5 +1,8 @@
 #![allow(unused)]
-use crate::{bus::{self, Bus}, types::Word};
+use crate::{
+    bus::{self, Bus},
+    types::Word,
+};
 
 /// CTC channel 0
 pub const CTC_0: usize = 0;
@@ -38,7 +41,7 @@ pub const CTC_CONTROL_BIT: u8 = 1 << 0;
 pub const CTC_CONTROL_WORD: u8 = CTC_CONTROL_BIT;
 pub const CTC_CONTROL_VECTOR: u8 = 0;
 
-#[derive(Clone,Copy)]
+#[derive(Clone, Copy)]
 struct Channel {
     pub control: u8,
     pub constant: u8,
@@ -188,10 +191,10 @@ impl CTC {
 
 #[cfg(test)]
 mod test {
-    use std::cell::RefCell;
     use super::*;
     use Bus;
     use Word;
+    use std::cell::RefCell;
 
     #[test]
     fn reset() {
@@ -273,8 +276,8 @@ mod test {
     fn write_control_word() {
         let mut ctc = CTC::new(0);
         let bus = TestBus::new();
-        let ctrl = (CTC_CONTROL_WORD | CTC_INTERRUPT_ENABLED | CTC_MODE_COUNTER |
-                    CTC_PRESCALER_256) as Word;
+        let ctrl = (CTC_CONTROL_WORD | CTC_INTERRUPT_ENABLED | CTC_MODE_COUNTER | CTC_PRESCALER_256)
+            as Word;
         ctc.write(&bus, CTC_0, ctrl);
         assert_eq!(ctrl, ctc.chn[CTC_0].control as Word);
         assert_eq!(CTC_RESET, ctc.chn[CTC_1].control);
@@ -286,16 +289,18 @@ mod test {
     fn ctc_counter_test(with_irq: bool) {
         let mut ctc = CTC::new(0);
         let bus = TestBus::new();
-        let ctrl_test = (CTC_CONTROL_WORD |
-                         if with_irq {
-            CTC_INTERRUPT_ENABLED
-        } else {
-            CTC_INTERRUPT_DISABLED
-        } | CTC_MODE_COUNTER | CTC_PRESCALER_256) as Word;
+        let ctrl_test = (CTC_CONTROL_WORD
+            | if with_irq {
+                CTC_INTERRUPT_ENABLED
+            } else {
+                CTC_INTERRUPT_DISABLED
+            }
+            | CTC_MODE_COUNTER
+            | CTC_PRESCALER_256) as Word;
         let ctrl = ctrl_test | (CTC_CONSTANT_FOLLOWS as Word);
 
         ctc.write(&bus, CTC_0, ctrl);
-        ctc.write(&bus, CTC_0, 0x20);       // write constant following control word
+        ctc.write(&bus, CTC_0, 0x20); // write constant following control word
         assert_eq!(ctrl_test, ctc.chn[CTC_0].control as Word);
         assert_eq!(0x20, ctc.chn[CTC_0].constant);
         assert_eq!(0x20, ctc.chn[CTC_0].down_counter);
@@ -317,12 +322,10 @@ mod test {
         assert!(bus.state.borrow().ctc_zero_called);
         assert_eq!(bus.state.borrow().ctc_irq_called, with_irq);
         assert_eq!(bus.state.borrow().ctc_zero_counter, 2);
-        assert_eq!(bus.state.borrow().ctc_irq_counter,
-                if with_irq {
-            2
-        } else {
-            0
-        });
+        assert_eq!(
+            bus.state.borrow().ctc_irq_counter,
+            if with_irq { 2 } else { 0 }
+        );
         assert_eq!(ctc.chn[CTC_0].down_counter, 0x10);
         assert_eq!(ctc.read(CTC_0), 0x10);
     }
@@ -340,16 +343,18 @@ mod test {
     fn ctc_timer_test(with_irq: bool) {
         let mut ctc = CTC::new(0);
         let bus = TestBus::new();
-        let ctrl_test = (CTC_CONTROL_WORD |
-                         if with_irq {
-            CTC_INTERRUPT_ENABLED
-        } else {
-            CTC_INTERRUPT_DISABLED
-        } | CTC_MODE_TIMER | CTC_PRESCALER_16) as Word;
+        let ctrl_test = (CTC_CONTROL_WORD
+            | if with_irq {
+                CTC_INTERRUPT_ENABLED
+            } else {
+                CTC_INTERRUPT_DISABLED
+            }
+            | CTC_MODE_TIMER
+            | CTC_PRESCALER_16) as Word;
         let ctrl = ctrl_test | (CTC_CONSTANT_FOLLOWS as Word);
 
         ctc.write(&bus, CTC_0, ctrl);
-        ctc.write(&bus, CTC_0, 0x20);       // write constant following control word
+        ctc.write(&bus, CTC_0, 0x20); // write constant following control word
         assert_eq!(ctrl_test, ctc.chn[CTC_0].control as Word);
         assert_eq!(0x20, ctc.chn[CTC_0].constant);
         assert_eq!(0x200, ctc.chn[CTC_0].down_counter);
@@ -363,12 +368,10 @@ mod test {
         assert!(bus.state.borrow().ctc_zero_called);
         assert_eq!(bus.state.borrow().ctc_irq_called, with_irq);
         assert_eq!(bus.state.borrow().ctc_zero_counter, 2);
-        assert_eq!(bus.state.borrow().ctc_irq_counter,
-                if with_irq {
-            2
-        } else {
-            0
-        });
+        assert_eq!(
+            bus.state.borrow().ctc_irq_counter,
+            if with_irq { 2 } else { 0 }
+        );
         assert_eq!(ctc.chn[CTC_0].down_counter, 0x200);
         assert_eq!(ctc.read(CTC_0), 0x20);
     }

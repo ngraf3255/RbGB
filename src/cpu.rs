@@ -2,12 +2,11 @@
 
 use debug_print::debug_println;
 
+use crate::bus::Bus;
 use crate::mem::*;
 use crate::registers;
 use crate::types::*;
 use std::sync::{Arc, Mutex};
-use crate::bus::Bus;
-
 
 #[allow(clippy::upper_case_acronyms)]
 pub struct CPU {
@@ -98,7 +97,7 @@ impl CPU {
         let pc = self.registers.val_pc();
         let mem = self.device_memory.lock().unwrap();
 
-        let imm = mem.read_byte(pc) as Word | (mem.read_byte(pc + 1) << 8) as Word;
+        let imm = mem.read_byte(pc) as Word | ((mem.read_byte(pc + 1) as Word) << 8) as Word;
         self.registers.inc_pc(2);
         imm
     }
@@ -186,7 +185,7 @@ impl CPU {
         return_word
     }
 
-    pub fn execute_next_opcode(&mut self,  bus: &dyn Bus, extention: bool) -> i64 {
+    pub fn execute_next_opcode(&mut self, extention: bool) -> i64 {
         let (cycle, extention_cycle) = if extention { (4, 8) } else { (0, 0) };
 
         let operation = self.step_opcode();
@@ -324,7 +323,8 @@ impl CPU {
                             };
                             let a = self.registers.val_a();
                             self.device_memory.lock().unwrap().write_byte(addr, a);
-                            self.registers.set_wz((a as Word) << 8 | ((addr + 1) & 0xFF));
+                            self.registers
+                                .set_wz((a as Word) << 8 | ((addr + 1) & 0xFF));
                             7
                         }
                         // LD HL,(nn); LD IX,(nn); LD IY,(nn)
@@ -362,7 +362,7 @@ impl CPU {
                     // 16-bit INC/DEC
                     let p = y >> 1;
                     let q = y & 1;
-                    let val = self.registers.r16sp(p) + if q == 0 { 1 } else {  Word::MAX };
+                    let val = self.registers.r16sp(p) + if q == 0 { 1 } else { Word::MAX };
                     self.registers.set_r16sp(p, val);
                     6
                 }
@@ -491,15 +491,17 @@ impl CPU {
                         2 => {
                             // OUT (n),A
                             let a = self.registers.val_a();
-                            let port = ((a << 8 | self.imm8()) & 0xFFFF) as Word;
-                            self.outp(bus, port, a);                            
+                            let port = (((a as Word) << 8 | self.imm8() as Word) as Word & 0xFFFF) as Word;
+                            // self.outp(bus, port, a); TODO: Implement port output
                             11
                         }
                         3 => {
                             // IN A,(n)
-                            let port = ((self.registers.val_a() as Word) << 8 | self.imm8()as Word) & 0xFFFF;
-                            let v = self.inp(bus, port);
-                            self.registers.set_a(v as Byte);
+                            let port = ((self.registers.val_a() as Word) << 8
+                                | self.imm8() as Word)
+                                & 0xFFFF;
+                            //let v = self.inp(bus, port); TODO: Implement port input
+                            // self.registers.set_a(v as Byte);
                             11
                         }
                         4 => {
@@ -558,7 +560,7 @@ impl CPU {
                         }
                         (1, 2) => {
                             // ED prefix instructions
-                            self.do_ed_op(bus)
+                            self.do_ed_op()
                         }
                         (1, 3) => {
                             // FD prefix instructions
@@ -612,7 +614,7 @@ impl CPU {
     }
 
     /// fetch and execute ED prefix instruction
-    fn do_ed_op(&mut self, bus: &dyn Bus) -> i64 {
+    fn do_ed_op(&mut self) -> i64 {
         let op = self.step_opcode();
 
         // split instruction byte into bit groups
@@ -642,40 +644,39 @@ impl CPU {
             (2, 6, 1) => self.cpir(),
             (2, 7, 1) => self.cpdr(),
             (2, 4, 2) => {
-                self.ini(bus);
+                self.ini();
                 16
             }
             (2, 5, 2) => {
-                self.ind(bus);
+                //self.ind(bus); TODO: Enable port input
                 16
             }
-            (2, 6, 2) => self.inir(bus),
-            (2, 7, 2) => self.indr(bus),
+            //(2, 6, 2) => self.inir(bus), TODO: Enable port input
+            //(2, 7, 2) => self.indr(bus),
             (2, 4, 3) => {
-                self.outi(bus);
+                // self.outi(bus); TODO: Enable port output
                 16
             }
             (2, 5, 3) => {
-                self.outd(bus);
+                //self.outd(bus); TODO: Enable port output
                 16
             }
-            (2, 6, 3) => self.otir(bus),
-            (2, 7, 3) => self.otdr(bus),
-
+            //(2, 6, 3) => self.otir(bus), TODO: Enable port output
+            //(2, 7, 3) => self.otdr(bus),
             (1, 6, 0) => {
                 // IN F,(C) (undocumented special case, only alter flags,
                 // don't store result)
                 let bc = self.registers.val_bc();
-                let v = self.inp(bus, bc);
-                let f = flags_szp(v) | (self.registers.val_f() & CF);
-                self.registers.set_f(f);
+                //let v = self.inp(bus, bc); TODO: Enable port input
+                //let f = flags_szp(v) | (self.registers.val_f() & CF);
+                //self.registers.set_f(f);
                 12
             }
             (1, _, 0) => {
                 // IN r,(C)
                 let bc = self.registers.val_bc();
-                let v = self.inp(bus, bc);
-                self.registers.set_reg8_by_index( y as Byte, v);
+                let v = self.inp(bc);
+                self.registers.set_reg8_by_index(y as Byte, v);
                 let f = flags_szp(v) | (self.registers.val_f() & CF);
                 self.registers.set_f(f);
                 12
@@ -683,14 +684,14 @@ impl CPU {
             (1, 6, 1) => {
                 // OUT (C),F (undocumented special case, always output 0)
                 let bc = self.registers.val_bc();
-                self.outp(bus, bc, 0);
+                self.outp(bc, 0);
                 12
             }
             (1, _, 1) => {
                 // OUT (C),r
                 let bc = self.registers.val_bc();
                 let v = self.registers.get_reg8_by_index(y as Byte);
-                self.outp(bus, bc, v);
+                self.outp(bc, v);
                 12
             }
             (1, _, 2) => {
@@ -735,7 +736,7 @@ impl CPU {
                 10
             }
             (1, _, 6) => {
-                // TODO: Implement 
+                // TODO: Implement
                 let mut mem = self.device_memory.lock().unwrap();
                 match y {
                     0 | 1 | 4 | 5 => {
@@ -798,24 +799,15 @@ impl CPU {
 
     /// fetch and execute CB prefix instruction
     fn do_cb_op(&mut self, ext: bool) -> i64 {
-        let d = if ext {
-            self.d()
-        } else {
-            0
-        };
+        let d = if ext { self.d() } else { 0 };
         let op = self.step_opcode();
-        let cyc = if ext {
-            4
-        } else {
-            0
-        };
+        let cyc = if ext { 4 } else { 0 };
 
         // split instruction byte into bit groups
         let x = op >> 6;
         let y = op >> 3 & 7;
         let z = op & 7;
-        cyc +
-        match x {
+        cyc + match x {
             0 => {
                 // rotates and shifts
                 if z == 6 {
@@ -847,12 +839,12 @@ impl CPU {
                 if z == 6 {
                     // BIT n,(HL); BIT n,(IX+d); BIT n,(IY+d)
                     let a = self.addr_d(d as Word, ext);
-                    let v = self.mem.r8(a);
+                    let v = self.device_memory.lock().unwrap().read_byte(a);
                     self.ibit(v, 1 << y);
                     12
                 } else {
                     // BIT n,r
-                    let v = self.reg.r8i(z);
+                    let v = self.registers.get_reg8_by_index(z);
                     self.bit(v, 1 << y);
                     8
                 }
@@ -861,22 +853,22 @@ impl CPU {
                 // RES n
                 if z == 6 {
                     // RES n,(HL); RES n,(IX+d); RES n,(IY+d)
-                    let a = self.addr_d(d, ext);
-                    let v = self.mem.r8(a) & !(1 << y);
-                    self.mem.w8(a, v);
+                    let a = self.addr_d(d.into(), ext);
+                    let v = self.device_memory.lock().unwrap().read_byte(a) & !(1 << y);
+                    self.device_memory.lock().unwrap().write_byte(a, v);
                     15
                 } else if ext {
                     // RES n,(IX+d),r; RES n,(IY+d),r
                     // (also stores result in a register)
-                    let a = self.addr_d(d, ext);
-                    let v = self.mem.r8(a) & !(1 << y);
-                    self.reg.set_r8i(z, v);
-                    self.mem.w8(a, v);
+                    let a = self.addr_d(d.into(), ext);
+                    let v = self.device_memory.lock().unwrap().read_byte(a) & !(1 << y);
+                    self.registers.set_reg8_by_index(z, v);
+                    self.device_memory.lock().unwrap().write_byte(a, v);
                     15
                 } else {
                     // RES n,r
-                    let v = self.reg.r8i(z) & !(1 << y);
-                    self.reg.set_r8i(z, v);
+                    let v = self.registers.get_reg8_by_index(z) & !(1 << y);
+                    self.registers.set_reg8_by_index(z, v);
                     8
                 }
             }
@@ -884,22 +876,22 @@ impl CPU {
                 // SET n
                 if z == 6 {
                     // SET n,(HL); SET n,(IX+d); SET n,(IY+d)
-                    let a = self.addr_d(d, ext);
-                    let v = self.mem.r8(a) | 1 << y;
-                    self.mem.w8(a, v);
+                    let a = self.addr_d(d.into(), ext);
+                    let v = self.device_memory.lock().unwrap().read_byte(a) | 1 << y;
+                    self.device_memory.lock().unwrap().write_byte(a, v);
                     15
                 } else if ext {
                     // SET n,(IX+d),r; SET n,(IY+d),r
                     // (also stores result in a register)
-                    let a = self.addr_d(d, ext);
-                    let v = self.mem.r8(a) | 1 << y;
-                    self.reg.set_r8i(z, v);
-                    self.mem.w8(a, v);
+                    let a = self.addr_d(d.into(), ext);
+                    let v = self.device_memory.lock().unwrap().read_byte(a) | 1 << y;
+                    self.registers.set_reg8_by_index(z, v);
+                    self.device_memory.lock().unwrap().write_byte(a, v);
                     15
                 } else {
                     // SET n,r
-                    let v = self.reg.r8i(z) | 1 << y;
-                    self.reg.set_r8i(z, v);
+                    let v = self.registers.get_reg8_by_index(z) | 1 << y;
+                    self.registers.set_reg8_by_index(z, v);
                     8
                 }
             }
@@ -1018,8 +1010,10 @@ impl CPU {
     pub fn add16(&mut self, acc: Word, add: Word) -> Word {
         self.registers.set_wz(acc + 1);
         let res = acc + add;
-        let f = (self.registers.val_f() & (SF | ZF | VF)) | (((acc ^ res ^ add) >> 8) as Byte & HF) |
-                ((res >> 16) as Byte & CF) | ((res >> 8) as Byte & (YF | XF));
+        let f = (self.registers.val_f() & (SF | ZF | VF))
+            | (((acc ^ res ^ add) >> 8) as Byte & HF)
+            | (((res as u32) >> 16) as Byte & CF)
+            | ((res >> 8) as Byte & (YF | XF));
         self.registers.set_f(f);
         res & 0xFFFF
     }
@@ -1085,7 +1079,8 @@ impl CPU {
         let acc = self.registers.val_a();
         let f = self.registers.val_f();
         let res = (acc << 1 | (f & CF)) & 0xFF;
-        self.registers.set_f(((acc >> 7) & CF) | (res & (XF | YF)) | (f & (SF | ZF | PF)));
+        self.registers
+            .set_f(((acc >> 7) & CF) | (res & (XF | YF)) | (f & (SF | ZF | PF)));
         self.registers.set_a(res);
     }
 
@@ -1101,7 +1096,8 @@ impl CPU {
         let acc = self.registers.val_a();
         let f = self.registers.val_f();
         let res = (acc >> 1 | (f & CF) << 7) & 0xFF;
-        self.registers.set_f((acc & CF) | (res & (XF | YF)) | (f & (SF | ZF | PF)));
+        self.registers
+            .set_f((acc & CF) | (res & (XF | YF)) | (f & (SF | ZF | PF)));
         self.registers.set_a(res);
     }
 
@@ -1142,7 +1138,10 @@ impl CPU {
         let al = self.registers.val_a() & 0x0F;
         let a = ah | (v >> 4 & 0x0F);
         self.registers.set_a(a);
-        self.device_memory.lock().unwrap().write_byte(addr, (v << 4 | al) & 0xFF);
+        self.device_memory
+            .lock()
+            .unwrap()
+            .write_byte(addr, (v << 4 | al) & 0xFF);
         self.registers.set_wz(addr + 1);
         let f = flags_szp(a) | (self.registers.val_f() & CF);
         self.registers.set_f(f);
@@ -1156,7 +1155,10 @@ impl CPU {
         let al = self.registers.val_a() & 0x0F;
         let a = ah | (v & 0x0F);
         self.registers.set_a(a);
-        self.device_memory.lock().unwrap().write_byte(addr, (v >> 4 | al << 4) & 0xFF);
+        self.device_memory
+            .lock()
+            .unwrap()
+            .write_byte(addr, (v >> 4 | al << 4) & 0xFF);
         self.registers.set_wz(addr + 1);
         let f = flags_szp(a) | (self.registers.val_f() & CF);
         self.registers.set_f(f);
@@ -1202,7 +1204,8 @@ impl CPU {
     pub fn cpl(&mut self) {
         let f = self.registers.val_f();
         let a = self.registers.val_a() ^ 0xFF;
-        self.registers.set_f((f & (SF | ZF | PF | CF)) | (HF | NF) | (a & (YF | XF)));
+        self.registers
+            .set_f((f & (SF | ZF | PF | CF)) | (HF | NF) | (a & (YF | XF)));
         self.registers.set_a(a);
     }
 
@@ -1210,7 +1213,8 @@ impl CPU {
     pub fn scf(&mut self) {
         let f = self.registers.val_f();
         let a = self.registers.val_a();
-        self.registers.set_f((f & (SF | ZF | YF | XF | PF)) | CF | (a & (YF | XF)));
+        self.registers
+            .set_f((f & (SF | ZF | YF | XF | PF)) | CF | (a & (YF | XF)));
     }
 
     #[inline(always)]
@@ -1235,7 +1239,10 @@ impl CPU {
     pub fn call(&mut self) -> i64 {
         let wz = self.imm16();
         let sp = (self.registers.val_sp() - 2) & 0xFFFF;
-        self.device_memory.lock().unwrap().write_word(sp, self.registers.val_pc());
+        self.device_memory
+            .lock()
+            .unwrap()
+            .write_word(sp, self.registers.val_pc());
         self.registers.set_sp(sp);
         self.registers.set_wz(wz);
         self.registers.set_pc(wz);
@@ -1407,12 +1414,13 @@ impl CPU {
     }
 
     #[inline(always)]
-    pub fn outp(&mut self, bus: &dyn Bus, port: Word, val: Byte) {
-        bus.cpu_outp(port, val);
+    pub fn outp(&mut self, _port: Word, _val: Byte) {
+        // bus.cpu_outp(port, val); TODO: Enable port output
     }
     #[inline(always)]
-    pub fn inp(&mut self, bus: &dyn Bus, port: Word) -> Byte {
-        bus.cpu_inp(port) & 0xFF
+    pub fn inp(&mut self, _port: Word) -> Byte {
+        //bus.cpu_inp(port) & 0xFF // TODO: Enable port input
+        1
     }
 
     #[inline(always)]
@@ -1420,44 +1428,44 @@ impl CPU {
     fn ini_ind_flags(&self, val: Byte, add: Byte) -> Byte {
         let b = self.registers.val_b();
         let c = self.registers.val_c();
-        let t = ((c + add) & 0xFF) + val;
+        let t: u16 = (((c + add) & 0xFF)+ val) as u16;
         (if b != 0 {b & SF} else {ZF}) |
             (if (val & SF) != 0 {NF} else {0}) |
             (if (t & 0x100) != 0 {HF | CF} else {0}) |
-            (flags_szp((t & 0x07) ^ b) & PF)
+            (flags_szp((t & 0x07) as u8 ^ b) & PF)
     }
 
     #[inline(always)]
-    pub fn ini(&mut self, bus: &dyn Bus) {
+    pub fn ini(&mut self) {
         let bc = self.registers.val_bc();
-        let io_val = self.inp(bus, bc);
+        // let io_val = self.inp(bus, bc); TODO: Enable Port Input
         self.registers.set_wz(bc + 1);
         let b = self.registers.val_b();
         self.registers.set_b(b - 1);
         let hl = self.registers.val_hl();
-        self.device_memory.lock().unwrap().write_byte(hl, io_val);
+        //self.device_memory.lock().unwrap().write_byte(hl, io_val);
         self.registers.set_hl(hl + 1);
-        let f = self.ini_ind_flags(io_val, 1);
-        self.registers.set_f(f);
+        // let f = self.ini_ind_flags(io_val, 1);
+        //self.registers.set_f(f);
     }
 
     #[inline(always)]
-    pub fn ind(&mut self, bus: &dyn Bus) {
+    pub fn ind(&mut self) {
         let bc = self.registers.val_bc();
-        let io_val = self.inp(bus, bc);
+        // let io_val = self.inp(bus, bc); TODO: Enable port input
         self.registers.set_wz(bc - 1);
         let b = self.registers.val_b();
         self.registers.set_b(b - 1);
         let hl = self.registers.val_hl();
-        self.device_memory.lock().unwrap().write_byte(hl, io_val);
+        // self.device_memory.lock().unwrap().write_byte(hl, io_val);
         self.registers.set_hl(hl - 1);
-        let f = self.ini_ind_flags(io_val, Byte::MAX);
-        self.registers.set_f(f);
+        //let f = self.ini_ind_flags(io_val, Byte::MAX);
+        //self.registers.set_f(f);
     }
 
     #[inline(always)]
-    pub fn inir(&mut self, bus: &dyn Bus) -> i64 {
-        self.ini(bus);
+    pub fn inir(&mut self) -> i64 {
+        self.ini();
         if self.registers.val_b() != 0 {
             self.registers.dec_pc(2);
             21
@@ -1467,8 +1475,8 @@ impl CPU {
     }
 
     #[inline(always)]
-    pub fn indr(&mut self, bus: &dyn Bus) -> i64 {
-        self.ind(bus);
+    pub fn indr(&mut self) -> i64 {
+        self.ind();
         if self.registers.val_b() != 0 {
             self.registers.dec_pc(2);
             21
@@ -1478,36 +1486,36 @@ impl CPU {
     }
 
     #[inline(always)]
-    pub fn outi(&mut self, bus: &dyn Bus) {
+    pub fn outi(&mut self) {
         let hl = self.registers.val_hl();
         let io_val = self.device_memory.lock().unwrap().read_byte(hl);
         self.registers.set_hl(hl + 1);
         let b = self.registers.val_b();
         self.registers.set_b(b - 1);
         let bc = self.registers.val_bc();
-        self.outp(bus, bc, io_val);
+        //self.outp(bus, bc, io_val); TODO: Implement port output
         self.registers.set_wz(bc + 1);
         let f = self.outi_outd_flags(io_val);
         self.registers.set_f(f);
     }
 
     #[inline(always)]
-    pub fn outd(&mut self, bus: &dyn Bus) {
+    pub fn outd(&mut self) {
         let hl = self.registers.val_hl();
         let io_val = self.device_memory.lock().unwrap().read_byte(hl);
         self.registers.set_hl(hl - 1);
         let b = self.registers.val_b();
         self.registers.set_b(b - 1);
         let bc = self.registers.val_bc();
-        self.outp(bus, bc, io_val);
+        // self.outp(bus, bc, io_val); TODO: Enable port output
         self.registers.set_wz(bc - 1);
         let f = self.outi_outd_flags(io_val);
         self.registers.set_f(f);
     }
 
     #[inline(always)]
-    pub fn otir(&mut self, bus: &dyn Bus) -> i64 {
-        self.outi(bus);
+    pub fn otir(&mut self) -> i64 {
+        self.outi();
         if self.registers.val_b() != 0 {
             self.registers.dec_pc(2);
             21
@@ -1517,8 +1525,8 @@ impl CPU {
     }
 
     #[inline(always)]
-    pub fn otdr(&mut self, bus: &dyn Bus) -> i64 {
-        self.outd(bus);
+    pub fn otdr(&mut self) -> i64 {
+        self.outd();
         if self.registers.val_b() != 0 {
             self.registers.dec_pc(2);
             21
@@ -1532,11 +1540,11 @@ impl CPU {
     fn outi_outd_flags(&self, val: Byte) -> Byte {
         let b = self.registers.val_b();
         let l = self.registers.val_l();
-        let t = l + val;
+        let t:u16 = (l + val) as u16;
         (if b != 0 {b & SF} else {ZF}) |
             (if (val & SF) != 0 {NF} else {0}) |
             (if (t & 0x100) != 0 {HF | CF} else {0}) |
-            (flags_szp((t & 0x07) ^ b) & PF)
+            (flags_szp((t & 0x07) as u8 ^ b) & PF)
     }
 
     #[inline(always)]
@@ -1544,7 +1552,7 @@ impl CPU {
     pub fn adc16(&mut self, acc: Word, add: Word) -> Word {
         self.registers.set_wz(acc + 1);
         let res = acc + add + (self.registers.val_f() & CF) as Word;
-        self.registers.set_f(((((acc ^ res ^ add) >> 8) & HF as Word) | ((res >> 16) & CF as Word) |
+        self.registers.set_f(((((acc ^ res ^ add) >> 8) & HF as Word) | ((((res as u32) >> 16) as Word) & CF as Word) |
                        ((res >> 8) & (SF | XF | YF) as Word) |
                        (if (res & 0xFFFF) == 0 {ZF as Word} else {0}) |
                        (((add ^ acc ^ 0x8000) & (add ^ res) & 0x8000)) >> 13) as Byte);
@@ -1556,14 +1564,14 @@ impl CPU {
     pub fn sbc16(&mut self, acc: Word, sub: Word) -> Word {
         self.registers.set_wz(acc + 1);
         let res = acc - sub - (self.registers.val_f() & CF) as Word;
-        self.registers.set_f(NF | ((((acc ^ res ^ sub) >> 8) & HF as Word) | ((res >> 16) & CF as Word) |
+        self.registers.set_f(NF | ((((acc ^ res ^ sub) >> 8) & HF as Word) | ((((res as u32) >> 16) as Word) & CF as Word) |
                        ((res >> 8) & (SF | XF | YF) as Word) |
                        (if (res & 0xFFFF) == 0 {ZF as Word} else {0}) |
                        (((sub ^ acc) & (acc ^ res) & 0x8000) >> 13))as Byte);
         res & 0xFFFF
     }
 
-     #[inline(always)]
+    #[inline(always)]
     pub fn rot(&mut self, op: Byte, val: Byte) -> Byte {
         match op {
             0 => self.rlc8(val),
@@ -1574,7 +1582,7 @@ impl CPU {
             5 => self.sra8(val),
             6 => self.sll8(val),
             7 => self.srl8(val),
-            _ => unreachable!() 
+            _ => unreachable!(),
         }
     }
 
@@ -1594,7 +1602,7 @@ impl CPU {
 
      #[inline(always)]
     #[cfg_attr(rustfmt, rustfmt_skip)]
-    pub fn ibit(&mut self, val: RegT, mask: RegT) {
+    pub fn ibit(&mut self, val: Byte, mask: Byte) {
     // special version of the BIT instruction for
     // (HL), (IX+d), (IY+d) to set the undocumented XF|YF flags
     // from high byte of HL+1 or IX/IY+d (expected in WZ)
@@ -1603,7 +1611,6 @@ impl CPU {
             (self.registers.val_w() & (XF | YF));
         self.registers.set_f(f)
     }
-
 }
 
 /// Memory wrapper class that implements functions to update and run timers
@@ -1678,14 +1685,14 @@ impl Timer {
 #[cfg_attr(rustfmt, rustfmt_skip)]
 fn flags_add(acc: Byte, add: Byte, res: Byte) -> Byte {
     (if (res & 0xFF) == 0 {ZF} else {res & SF}) |
-    (res & (YF | XF)) | ((res >> 8) & CF) |
+    (res & (YF | XF)) | ((((res as Word) >> 8) as Byte) & CF) |
     ((acc ^ add ^ res) & HF) | ((((acc ^ add ^ 0x80) & (add ^ res)) >> 5) & VF)
 }
 
 #[cfg_attr(rustfmt, rustfmt_skip)]
 fn flags_sub(acc: Byte, sub: Byte, res: Byte) -> Byte {
     NF | (if (res & 0xFF) == 0 {ZF} else {res & SF}) |
-    (res & (YF | XF)) | ((res >> 8) & CF) |
+    (res & (YF | XF)) | ((((res as Word) >> 8) as Byte) & CF) |
     ((acc ^ sub ^ res) & HF) | ((((acc ^ sub) & (res ^ acc)) >> 5) & VF)
 }
 
@@ -1695,7 +1702,7 @@ fn flags_cp(acc: Byte, sub: Byte, res: Byte) -> Byte {
     // 2 undocumented flag bits X and Y are taken from the
     // sub-value, not the result
     NF | (if (res & 0xFF) == 0 {ZF} else {res & SF}) |
-    (sub & (YF | XF)) | ((res >> 8) & CF) |
+    (sub & (YF | XF)) | ((((res as Word) >> 8) as Byte) & CF) |
     ((acc ^ sub ^ res) & HF) | ((((acc ^ sub) & (res ^ acc)) >> 5) & VF)
 }
 

@@ -1,4 +1,7 @@
-use crate::{ctc::CTC, types::{Byte, Word}};
+use crate::{
+    ctc::CTC,
+    types::{Byte, Word},
+};
 
 /// system bus trait
 ///

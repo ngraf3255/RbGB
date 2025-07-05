@@ -13,14 +13,16 @@ use mem::{Memory, SharedMemory};
 use sdl2::{event::Event, keyboard::Keycode, pixels::Color, pixels::PixelFormatEnum, rect::Rect};
 use types::{SCREEN_HEIGHT, SCREEN_WIDTH};
 
+use crate::bus::Bus;
+
+mod bus;
 mod cpu;
+mod ctc;
 mod graphics;
 mod mem;
 mod registers;
 mod sound;
 mod types;
-mod bus;
-mod ctc;
 
 ///Main entry point to gameboy simulation
 fn main() -> Result<(), String> {
@@ -140,8 +142,8 @@ impl Emulator {
         debug_println!("Main Loop");
         let mut num_cycles: u32 = 0;
         while num_cycles < Self::MAXCYCLES {
-            let cycles: u32 = self.cpu.execute_next_opcode(false);
-            num_cycles += cycles;
+            let cycles = self.cpu.execute_next_opcode(false);
+            num_cycles += cycles as u32;
             self.cpu.timers.update_timers(num_cycles as i32);
             self.screen.update_screen(num_cycles as i32);
             self.cpu.handle_interrupts();

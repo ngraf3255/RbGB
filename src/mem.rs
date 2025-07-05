@@ -373,8 +373,6 @@ impl Memory {
             _ => panic!("Invalid color found"), // this should not be possible
         }
     }
-
-
 }
 
 #[cfg(test)]

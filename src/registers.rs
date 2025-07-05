@@ -117,8 +117,8 @@ impl Registers {
             3 => self.reg_de.low_value(),  // e
             4 => self.reg_hl.high_value(), // h
             5 => self.reg_hl.low_value(),  // l
-            6 => self.reg_af.high_value(),  // f
-            7 => self.reg_af.low_value(), // a
+            6 => self.reg_af.high_value(), // f
+            7 => self.reg_af.low_value(),  // a
             _ => 0,
         }
     }
@@ -140,18 +140,18 @@ impl Registers {
     /// Gets an 8 bit register by a basic index
     pub fn get_reg16_by_index(&self, index: Byte) -> Word {
         match index {
-            0 => self.reg_bc.value(), // bc
-            2 => self.reg_de.value(), // de
-            4 => self.reg_hl.value(), // hl
-            6 => self.reg_af.value(),  // af
-            8 => self.reg_ix.value(), // ix
-            10 => self.reg_iy.value(), // iy
-            12 => self.reg_sp.value(), // sp
-            14 => self.reg_wz.value(),  // wz
+            0 => self.reg_bc.value(),    // bc
+            2 => self.reg_de.value(),    // de
+            4 => self.reg_hl.value(),    // hl
+            6 => self.reg_af.value(),    // af
+            8 => self.reg_ix.value(),    // ix
+            10 => self.reg_iy.value(),   // iy
+            12 => self.reg_sp.value(),   // sp
+            14 => self.reg_wz.value(),   // wz
             16 => self.reg_bc_c.value(), // bc_c
             18 => self.reg_de_c.value(), // de_c
             20 => self.reg_hl_c.value(), // hl_c
-            22 => self.reg_af_c.value(),  // af_c
+            22 => self.reg_af_c.value(), // af_c
             24 => self.reg_wz_c.value(), //wz_c
             _ => 0,
         }
@@ -159,18 +159,18 @@ impl Registers {
 
     pub fn set_reg16_by_index(&mut self, index: Byte, val: Word) {
         match index {
-            0 => self.reg_bc.set(val), // bc
-            2 => self.reg_de.set(val), // de
-            4 => self.reg_hl.set(val), // hl
-            6 => self.reg_af.set(val),  // af
-            8 => self.reg_ix.set(val), // ix
-            10 => self.reg_iy.set(val), // iy
-            12 => self.reg_sp.set(val), // sp
-            14 => self.reg_wz.set(val),  // wz
+            0 => self.reg_bc.set(val),    // bc
+            2 => self.reg_de.set(val),    // de
+            4 => self.reg_hl.set(val),    // hl
+            6 => self.reg_af.set(val),    // af
+            8 => self.reg_ix.set(val),    // ix
+            10 => self.reg_iy.set(val),   // iy
+            12 => self.reg_sp.set(val),   // sp
+            14 => self.reg_wz.set(val),   // wz
             16 => self.reg_bc_c.set(val), // bc_c
             18 => self.reg_de_c.set(val), // de_c
             20 => self.reg_hl_c.set(val), // hl_c
-            22 => self.reg_af_c.set(val),  // af_c
+            22 => self.reg_af_c.set(val), // af_c
             24 => self.reg_wz_c.set(val), //wz_c
             _ => panic!("Invalid index found"),
         };
@@ -273,9 +273,19 @@ impl Registers {
         unsafe { self.reg_de.bitspace.lo }
     }
 
+    /// Sets the contents of the w register
+    pub fn set_w(&mut self, val: Byte) {
+        self.reg_wz.bitspace.hi = val;
+    }
+
+    /// Gets the contents of the w register
+    pub fn val_w(&self) -> Byte {
+        unsafe { self.reg_wz.bitspace.hi }
+    }
+
     /// Gets the contents of the af register
     pub fn val_af(&mut self) -> Word {
-        unsafe {self.reg_af.reg}
+        unsafe { self.reg_af.reg }
     }
 
     /// Sets the contents of the af register
@@ -285,7 +295,7 @@ impl Registers {
 
     /// Gets the contents of the bc register
     pub fn val_bc(&mut self) -> Word {
-        unsafe {self.reg_bc.reg}
+        unsafe { self.reg_bc.reg }
     }
 
     /// Sets the contents of the bc register
@@ -295,7 +305,7 @@ impl Registers {
 
     /// Gets the contents of the de register
     pub fn val_de(&mut self) -> Word {
-        unsafe {self.reg_de.reg}
+        unsafe { self.reg_de.reg }
     }
 
     /// Sets the contents of the de register
@@ -305,17 +315,17 @@ impl Registers {
 
     /// Gets the contents of the hl register
     pub fn val_hl(&mut self) -> Word {
-        unsafe {self.reg_wz.reg}
+        unsafe { self.reg_wz.reg }
     }
 
     /// Sets the contents of the hl register
     pub fn set_hl(&mut self, val: Word) {
         self.reg_hl.reg = val;
     }
-    
+
     /// Gets the contents of the wz register
     pub fn val_wz(&mut self) -> Word {
-        unsafe {self.reg_wz.reg}
+        unsafe { self.reg_wz.reg }
     }
 
     /// Sets the contents of the wz register
@@ -343,8 +353,7 @@ impl Registers {
         self.reg_sp.reg = val;
     }
 
-
-/////////////////////////////////////////////////////////
+    /////////////////////////////////////////////////////////
 
     /// set 16-bit register by 2-bit index with mapping through SP-table
     #[inline(always)]
@@ -374,14 +383,17 @@ impl Registers {
         self.get_reg16_by_index(i)
     }
 
-
     #[inline(always)]
     pub fn dec_pc(&mut self, dec: Word) {
-        unsafe {self.reg_pc.reg -= dec; }
+        unsafe {
+            self.reg_pc.reg -= dec;
+        }
     }
 
     #[inline(always)]
     pub fn inc_pc(&mut self, inc: Word) {
-        unsafe {self.reg_pc.reg += inc; }
+        unsafe {
+            self.reg_pc.reg += inc;
+        }
     }
 }
