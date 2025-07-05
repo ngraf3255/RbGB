@@ -55,6 +55,7 @@ pub const AF_: Byte = 22;
 pub const WZ_: Byte = 24;
 
 pub const SP_TABLE: [Byte; 4] = [BC, DE, HL, SP]; //TODO: Change to localize as global so compiler doesn't inline the table
+pub const AF_TABLE: [Byte; 4] = [BC, DE, HL, AF];
 
 // Interrupt Constants
 pub const IE: Word = 0xFFFF; // Interrupt enabled register

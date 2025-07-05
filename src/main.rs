@@ -19,6 +19,8 @@ mod mem;
 mod registers;
 mod sound;
 mod types;
+mod bus;
+mod ctc;
 
 ///Main entry point to gameboy simulation
 fn main() -> Result<(), String> {

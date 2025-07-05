@@ -113,6 +113,13 @@ impl Memory {
         self.write_byte(addr + 1, h as Byte);
     }
 
+    ///Function to read a word
+    pub fn read_word(&self, addr: Word) -> Word {
+        let l = self.read_byte(addr) as Word;
+        let h = self.read_byte(addr + 1) as Word;
+        h << 8 | l
+    }
+
     ///Wrapper for forced memory reading
     ///
     /// Be careful as there are no bounds on providing the wrong mem index

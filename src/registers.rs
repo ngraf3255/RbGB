@@ -272,6 +272,46 @@ impl Registers {
     pub fn val_l(&self) -> Byte {
         unsafe { self.reg_de.bitspace.lo }
     }
+
+    /// Gets the contents of the af register
+    pub fn val_af(&mut self) -> Word {
+        unsafe {self.reg_af.reg}
+    }
+
+    /// Sets the contents of the af register
+    pub fn set_af(&mut self, val: Word) {
+        self.reg_af.reg = val;
+    }
+
+    /// Gets the contents of the bc register
+    pub fn val_bc(&mut self) -> Word {
+        unsafe {self.reg_bc.reg}
+    }
+
+    /// Sets the contents of the bc register
+    pub fn set_bc(&mut self, val: Word) {
+        self.reg_bc.reg = val;
+    }
+
+    /// Gets the contents of the de register
+    pub fn val_de(&mut self) -> Word {
+        unsafe {self.reg_de.reg}
+    }
+
+    /// Sets the contents of the de register
+    pub fn set_de(&mut self, val: Word) {
+        self.reg_de.reg = val;
+    }
+
+    /// Gets the contents of the hl register
+    pub fn val_hl(&mut self) -> Word {
+        unsafe {self.reg_wz.reg}
+    }
+
+    /// Sets the contents of the hl register
+    pub fn set_hl(&mut self, val: Word) {
+        self.reg_hl.reg = val;
+    }
     
     /// Gets the contents of the wz register
     pub fn val_wz(&mut self) -> Word {
@@ -285,12 +325,22 @@ impl Registers {
 
     /// Gets the contents of the pc register
     pub fn val_pc(&self) -> Word {
-        unsafe { self.reg_de.reg }
+        unsafe { self.reg_pc.reg }
     }
 
     /// Sets the contents of the pc register
     pub fn set_pc(&mut self, val: Word) {
         self.reg_pc.reg = val;
+    }
+
+    /// Gets the contents of the sp register
+    pub fn val_sp(&self) -> Word {
+        unsafe { self.reg_sp.reg }
+    }
+
+    /// Sets the contents of the sp register
+    pub fn set_sp(&mut self, val: Word) {
+        self.reg_sp.reg = val;
     }
 
 
@@ -301,6 +351,20 @@ impl Registers {
     pub fn set_r16sp(&mut self, r: Byte, v: Word) {
         let i = SP_TABLE[r as usize];
         self.set_reg16_by_index(i, v);
+    }
+
+    /// set 16-bit register by 2-bit index with mapping through AF-table
+    #[inline(always)]
+    pub fn set_r16af(&mut self, r: Byte, v: Word) {
+        let i = AF_TABLE[r as usize];
+        self.set_reg16_by_index(i, v);
+    }
+
+    /// get 16-bit register by 2-bit index with mapping through AF-table
+    #[inline(always)]
+    pub fn r16af(&self, r: Byte) -> Word {
+        let i = AF_TABLE[r as usize];
+        self.get_reg16_by_index(i)
     }
 
     /// get 16-bit register by 2-bit index with mapping through SP-table
