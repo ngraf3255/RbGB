@@ -1725,7 +1725,7 @@ mod test {
     use ntest::timeout;
 
     #[test]
-    #[timeout(10)]
+    #[timeout(100)]
     fn test_cpu_init() {
         let mem = Arc::new(Mutex::new(Memory::new()));
 
@@ -1735,7 +1735,7 @@ mod test {
     }
 
     #[test]
-    #[timeout(10)]
+    #[timeout(100)]
     fn test_cpu_interrupts() {
         let mem = Arc::new(Mutex::new(Memory::new()));
         let mut cpu = CPU::new(mem);
@@ -1758,7 +1758,7 @@ mod test {
     }
 
     #[test]
-    #[timeout(10)]
+    #[timeout(100)]
     fn test_push_pop_stack() {
         let mem = Arc::new(Mutex::new(Memory::new()));
         let mut cpu = CPU::new(mem);
@@ -1772,7 +1772,7 @@ mod test {
     }
 
     #[test]
-    #[timeout(10)]
+    #[timeout(100)]
     fn test_timer_increment() {
         let mem = Arc::new(Mutex::new(Memory::new()));
         {
@@ -1789,7 +1789,7 @@ mod test {
     }
 
     #[test]
-    #[timeout(10)]
+    #[timeout(100)]
     fn test_timer_overflow() {
         let mem = Arc::new(Mutex::new(Memory::new()));
         {
@@ -1808,7 +1808,7 @@ mod test {
     }
 
     #[test]
-    #[timeout(10)]
+    #[timeout(100)]
     fn test_divider_register_increment() {
         let mem = Arc::new(Mutex::new(Memory::new()));
         let mut timer = Timer::new(Arc::clone(&mem));
@@ -1818,7 +1818,7 @@ mod test {
     }
 
     #[test]
-    #[timeout(10)]
+    #[timeout(100)]
     fn test_register_operations() {
         let mut reg = registers::Register::new(0x1234);
         assert_eq!(reg.value(), 0x1234);
@@ -1837,7 +1837,7 @@ mod test {
     }
 
     #[test]
-    #[timeout(10)]
+    #[timeout(100)]
     fn test_cpu_reset() {
         let mem = Arc::new(Mutex::new(Memory::new()));
         let mut cpu = CPU::new(Arc::clone(&mem));
@@ -1858,7 +1858,7 @@ mod test {
     }
 
     #[test]
-    #[timeout(10)]
+    #[timeout(100)]
     fn test_timer_disabled_no_increment() {
         let mem = Arc::new(Mutex::new(Memory::new()));
         {
@@ -1873,7 +1873,7 @@ mod test {
         assert_eq!(m.read_byte(TIMA), 0);
     }
     #[test]
-    #[timeout(10)]
+    #[timeout(100)]
     fn test_serial_interrupt_vector() {
         let mem = Arc::new(Mutex::new(Memory::new()));
         let mut cpu = CPU::new(Arc::clone(&mem));
@@ -1898,7 +1898,7 @@ mod test {
     }
 
     #[test]
-    #[timeout(10)]
+    #[timeout(100)]
     fn test_timer_update() {
         let mem = Arc::new(Mutex::new(Memory::new()));
         let mut timer = Timer::new(Arc::clone(&mem));

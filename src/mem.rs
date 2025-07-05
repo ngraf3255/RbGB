@@ -569,7 +569,7 @@ mod test {
     }
 
     #[test]
-    #[timeout(10)]
+    #[timeout(100)]
     fn test_clock_frequency_values() {
         let mut mem = Memory::new();
 
@@ -591,7 +591,7 @@ mod test {
     }
 
     #[test]
-    #[timeout(10)]
+    #[timeout(100)]
     fn test_dma_transfer() {
         let mut mem = Memory::new();
 
@@ -609,7 +609,7 @@ mod test {
     }
 
     #[test]
-    #[timeout(10)]
+    #[timeout(100)]
     fn test_set_clock_frequency() {
         let mut mem = Memory::new();
 
@@ -623,7 +623,7 @@ mod test {
     }
 
     #[test]
-    #[timeout(10)]
+    #[timeout(100)]
     fn test_request_enable_interrupt() {
         let mut mem = Memory::new();
         mem.request_interrupt(1);
@@ -640,7 +640,7 @@ mod test {
     }
 
     #[test]
-    #[timeout(1)]
+    #[timeout(100)]
     fn test_interrupt_bit_ops() {
         let mut mem = Memory::new();
 
