@@ -310,7 +310,7 @@ impl Memory {
 
     /// Loads the given ROM bytes into memory
     pub fn load_rom_data(&mut self, data: &[u8]) {
-        let len = data.len().min(MEM_SIZE);
+        let len = data.len().min(0x8000);
         self.mem[..len].copy_from_slice(&data[..len]);
         self.refresh_rom_banking_type();
     }

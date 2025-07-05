@@ -13,8 +13,6 @@ use mem::{Memory, SharedMemory};
 use sdl2::{event::Event, keyboard::Keycode, pixels::Color, pixels::PixelFormatEnum, rect::Rect};
 use types::{SCREEN_HEIGHT, SCREEN_WIDTH};
 
-use crate::bus::Bus;
-
 mod bus;
 mod cpu;
 mod ctc;
@@ -159,30 +157,11 @@ impl Emulator {
         let data = std::fs::read(path).map_err(|e| e.to_string())?;
         let mut mem = self.memory.lock().unwrap();
         mem.load_rom_data(&data);
+        mem.ram_startup();
+        drop(mem);
+        self.cpu.reset();
         Ok(())
     }
-
-    fn execute_next_opcode(&self) -> u32 {
-        //TODO: Build opcode execution code
-        1000
-    }
-
-    fn update_timers(&self) {
-        //TODO: Creation functionality to update hardware timers
-        unimplemented!();
-    }
-
-    fn update_graphics(&self) {
-        //TODO: Link this to graphics library update_screen func
-        unimplemented!();
-    }
-
-    fn handle_interrupts(&self) {
-        //TODO: Handle all the interrupts
-        unimplemented!();
-    }
-
-    fn init(&self) {}
 
     pub fn blit_rgb_bytes_to_texture(
         &self,
@@ -210,7 +189,5 @@ impl Emulator {
 
 #[cfg(test)]
 mod test {
-    use crate::Emulator;
-    use ntest::timeout;
 
 }

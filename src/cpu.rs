@@ -2,7 +2,6 @@
 
 use debug_print::debug_println;
 
-use crate::bus::Bus;
 use crate::mem::*;
 use crate::registers;
 use crate::types::*;
@@ -41,7 +40,7 @@ impl CPU {
         self.registers = registers::Registers::new();
         self.device_memory = Arc::clone(&mem);
         self.halted = false;
-        self.ime = false;
+        self.ime = true;
         self.cycles = 0;
     }
 
@@ -491,13 +490,13 @@ impl CPU {
                         2 => {
                             // OUT (n),A
                             let a = self.registers.val_a();
-                            let port = (((a as Word) << 8 | self.imm8() as Word) as Word & 0xFFFF) as Word;
+                            let _port = (((a as Word) << 8 | self.imm8() as Word) as Word & 0xFFFF) as Word;
                             // self.outp(bus, port, a); TODO: Implement port output
                             11
                         }
                         3 => {
                             // IN A,(n)
-                            let port = ((self.registers.val_a() as Word) << 8
+                            let _port = ((self.registers.val_a() as Word) << 8
                                 | self.imm8() as Word)
                                 & 0xFFFF;
                             //let v = self.inp(bus, port); TODO: Implement port input
@@ -666,7 +665,7 @@ impl CPU {
             (1, 6, 0) => {
                 // IN F,(C) (undocumented special case, only alter flags,
                 // don't store result)
-                let bc = self.registers.val_bc();
+                let _bc = self.registers.val_bc();
                 //let v = self.inp(bus, bc); TODO: Enable port input
                 //let f = flags_szp(v) | (self.registers.val_f() & CF);
                 //self.registers.set_f(f);
@@ -733,7 +732,7 @@ impl CPU {
                 // RETI (RETN is not implemented)
                 // self.reti(bus) TODO: Implement reti
                 unimplemented!();
-                10
+                //10
             }
             (1, _, 6) => {
                 // TODO: Implement
@@ -756,13 +755,13 @@ impl CPU {
             (1, 0, 7) => {
                 // self.registers.i = self.registers.val_a(); TODO: Implement I register
                 unimplemented!();
-                9
+                //9
             } // LD I,A
             (1, 1, 7) => {
                 // TODO: Implement refresh register
                 //self.registers.r = self.registers.a();
                 unimplemented!();
-                9
+                //9
             } // LD R,A
             (1, 2, 7) => {
                 // LD A,I
@@ -772,7 +771,7 @@ impl CPU {
                 // self.registers.set_f(f);
                 //TODO: Implement i register
                 unimplemented!();
-                9
+                //9
             }
             (1, 3, 7) => {
                 // LD A,R
@@ -782,7 +781,7 @@ impl CPU {
                 // self.registers.set_f(f);
                 // TODO: Implement A register
                 unimplemented!();
-                9
+                //9
             }
             (1, 4, 7) => {
                 self.rrd();
@@ -1850,7 +1849,7 @@ mod test {
         cpu.reset();
 
         assert_eq!(cpu.cycles, 0);
-        assert!(!cpu.ime);
+        assert!(cpu.ime);
         assert_eq!(cpu.registers.reg_af.value(), 0x01B0);
         assert!(!Arc::ptr_eq(&old_mem, &cpu.device_memory));
         let new_mem = cpu.device_memory.lock().unwrap();
