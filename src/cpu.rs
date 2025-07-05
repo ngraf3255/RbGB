@@ -113,7 +113,7 @@ impl CPU {
             drop(mem); // Memory lock is dropped after all reads are done
 
             if request != 0 {
-                debug_println!("Interrupt Requested");
+                // debug_println!("Interrupt Requested");
                 for i in 0..5 {
                     let req_bit = (request >> i) & 1 != 0;
                     let ena_bit = (enabled >> i) & 1 != 0;
@@ -129,7 +129,7 @@ impl CPU {
         // New lock aquired on memory
         let mut mem = self.device_memory.lock().unwrap();
 
-        debug_println!("Servicing interrupt {}", interrupt);
+        // debug_println!("Servicing interrupt {}", interrupt);
         self.ime = false; // Disables new interrupts
         let mut request = mem.read_byte(IF);
         // Clear the requested interrupt flag. The previous implementation used
@@ -141,11 +141,11 @@ impl CPU {
         drop(mem); // Drops memory since we are done writing
 
         // Save current execution location on stack
-        debug_println!("Pushing PC on stack: {:#X}", self.registers.reg_pc.value());
+        // debug_println!("Pushing PC on stack: {:#X}", self.registers.reg_pc.value());
         self.push_stack(self.registers.reg_pc.value());
 
         // Set the program counter to the address of the ISRs
-        debug_println!("Matching interrupt {interrupt}");
+        // debug_println!("Matching interrupt {interrupt}");
         match interrupt {
             0 => self.registers.reg_pc.set(0x40), // Vblank
             1 => self.registers.reg_pc.set(0x48), // STAT
@@ -955,7 +955,7 @@ impl CPU {
     #[inline(always)]
     pub fn sbc8(&mut self, sub: Byte) {
         let acc = self.registers.val_a();
-        let res = acc - sub - (self.registers.val_f() & CF);
+        let res = acc.wrapping_sub(sub).wrapping_sub(self.registers.val_f() & CF);
         self.registers.set_f(flags_sub(acc, sub, res));
         self.registers.set_a(res);
     }
@@ -963,7 +963,7 @@ impl CPU {
     #[inline(always)]
     pub fn cp8(&mut self, sub: Byte) {
         let acc = self.registers.val_a();
-        let res = acc - sub;
+        let res = acc.wrapping_sub(sub);
         self.registers.set_f(flags_cp(acc, sub, res));
     }
 
@@ -1664,9 +1664,9 @@ impl Timer {
 
             let mut mem = self.mem.lock().unwrap();
             // 0xFF04 is the location of the divider register
-            debug_println!("Force reading from divider reg");
+            // debug_println!("Force reading from divider reg");
             let divider_register = mem.read_byte_forced(DIVIDER_REGISTER).wrapping_add(1);
-            debug_println!("Divider Register Value: {:X}", divider_register);
+            // debug_println!("Divider Register Value: {:X}", divider_register);
             mem.write_byte_forced(DIVIDER_REGISTER, divider_register);
         }
     }

@@ -137,7 +137,7 @@ impl Emulator {
         if self.paused {
             return;
         }
-        debug_println!("Main Loop");
+        // debug_println!("Main Loop");
         let mut num_cycles: u32 = 0;
         while num_cycles < Self::MAXCYCLES {
             let cycles = self.cpu.execute_next_opcode(false);
@@ -145,6 +145,7 @@ impl Emulator {
             self.cpu.timers.update_timers(num_cycles as i32);
             self.screen.update_screen(num_cycles as i32);
             self.cpu.handle_interrupts();
+            debug_println!("Program Counter: 0x{:X}", self.cpu.registers.val_pc());
         }
         std::thread::sleep(Duration::from_millis(100));
     }
@@ -178,11 +179,11 @@ impl Emulator {
             ));
         }
 
-        // debug_println!("Starting blit... ");
+        // // debug_println!("Starting blit... ");
         texture
             .update(None, &data[..], pitch as usize)
             .map_err(|e| e.to_string())?; // possibly replace with ?
-        // debug_println!("Blit successful. ");
+        // // debug_println!("Blit successful. ");
         Ok(())
     }
 }

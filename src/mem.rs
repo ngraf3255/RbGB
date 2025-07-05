@@ -36,7 +36,7 @@ impl Memory {
 
     // Wrapper for memory read functionality
     pub fn read_byte(&self, addr: Word) -> Byte {
-        debug_println!("Reading byte at addr 0x{:X}", addr);
+        // debug_println!("Reading byte at addr 0x{:X}", addr);
         // are we reading from the rom memory bank?
         if (0x4000..0x7FFF).contains(&addr) {
             let addr = addr as usize - 0x4000;
@@ -48,7 +48,7 @@ impl Memory {
 
             self.mem[addr + (self.ram_banks as usize) * 0x2000]
         } else {
-            debug_println!("VALID READ");
+            // debug_println!("VALID READ");
             // Else return memory
             self.mem[addr as usize]
         }
@@ -213,10 +213,10 @@ impl Memory {
         //turns off the lower 5 bits of the banking mode
         let lower5: Byte = value & 31;
         let current = self.rom_banks.value();
-        debug_println!("Current Banking Type: {:#?}", current);
-        debug_println!("Maked Lower 5: {:#?}", lower5);
+        // debug_println!("Current Banking Type: {:#?}", current);
+        // debug_println!("Maked Lower 5: {:#?}", lower5);
         let masked = (current & 224) | lower5;
-        debug_println!("Post Banking Type: {:#?}", masked);
+        // debug_println!("Post Banking Type: {:#?}", masked);
         self.rom_banks = CurrentRomBank::from(masked);
         if self.rom_banks == CurrentRomBank::Bank(0) {
             self.rom_banks = CurrentRomBank::Bank(1);
@@ -304,7 +304,7 @@ impl Memory {
     pub fn request_interrupt(&mut self, interrupt: Byte) {
         let mut request = self.read_byte(IF);
         request |= 1 << interrupt; // Sets the bit of the request
-        debug_println!("Writing Interrupt {}", request);
+        // debug_println!("Writing Interrupt {}", request);
         self.write_byte(IF, request);
     }
 
@@ -322,7 +322,7 @@ impl Memory {
         // the existing enables.
         let mut enabled = self.read_byte(IE);
         enabled |= 1 << interrupt; // Sets the bit of the request
-        debug_println!("Enabling Interrupt {}", enabled);
+        // debug_println!("Enabling Interrupt {}", enabled);
         self.write_byte(IE, enabled);
     }
 
@@ -487,7 +487,7 @@ mod test {
         assert!(!mem.ram_write_enable);
 
         //Change rom bank
-        debug_println!("\nCORRECTLY SET BANKS");
+        // debug_println!("\nCORRECTLY SET BANKS");
         mem.write_byte(0x2001, 0x0);
         assert_eq!(mem.rom_banks, CurrentRomBank::Bank(1));
         mem.write_byte(0x2001, 0x1);
@@ -505,7 +505,7 @@ mod test {
         assert_eq!(mem.rom_banks, CurrentRomBank::Bank(35));
 
         //Test banking set failure
-        debug_println!("\nINCORRECTLY SET BANKS");
+        // debug_println!("\nINCORRECTLY SET BANKS");
         mem.write_byte(0x2001, 0x40);
         assert_eq!(mem.rom_banks, CurrentRomBank::Bank(32));
 

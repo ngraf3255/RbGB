@@ -44,7 +44,7 @@ impl Screen {
     pub fn update_screen(&mut self, cycles: i32) {
         //TODO: Create function for updating screen at 60Hz
 
-        debug_println!("Screen update!");
+        // debug_println!("Screen update!");
 
         self.set_lcd_status();
 
@@ -57,7 +57,7 @@ impl Screen {
 
         let mut mem = self.device_memory.lock().unwrap();
 
-        debug_println!("Check scanlines!");
+        // debug_println!("Check scanlines!");
         if self.scanline_counter <= 0 {
             // Time to move onto the next scanline
             let scanline = mem.read_byte(CURRENT_SCANLINE) + 1;
@@ -66,7 +66,7 @@ impl Screen {
             self.scanline_counter = 456;
 
             // we are now in the vertical blank period
-            debug_println!("Current Scanline is {scanline}");
+            // debug_println!("Current Scanline is {scanline}");
             if scanline == 144 {
                 mem.request_interrupt(0);
             }
@@ -326,7 +326,7 @@ impl Screen {
     }
 
     fn set_lcd_status(&mut self) {
-        debug_println!("Updating LCD Status!");
+        // debug_println!("Updating LCD Status!");
 
         let lcd_enabled = self.is_lcd_enabled();
         // Gets lock on memory
@@ -352,7 +352,7 @@ impl Screen {
         let mode;
         let mut require_interrupt = false;
 
-        debug_println!("Current scanline is {current_line} and mode is {current_mode}");
+        // debug_println!("Current scanline is {current_line} and mode is {current_mode}");
 
         // in vblank so mode is set to 1
         if current_line >= 144 {
@@ -401,11 +401,11 @@ impl Screen {
 
     fn is_lcd_enabled(&mut self) -> bool {
         // Check bit 7 of LCD Control register (0xFF40)
-        debug_println!("Checking if LCD is enabled");
+        // debug_println!("Checking if LCD is enabled");
         let mem = self.device_memory.lock().unwrap();
-        debug_println!("Lock aquired");
+        // debug_println!("Lock aquired");
         let x = mem.read_byte(LCD_CONTROL) & (1 << 7) != 0;
-        debug_println!("Check complete");
+        // debug_println!("Check complete");
         x
     }
 

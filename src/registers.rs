@@ -67,14 +67,14 @@ impl Register {
     /// Decriments the register
     pub fn decriment(&mut self) {
         unsafe {
-            self.reg -= 1;
+            self.reg = self.reg.wrapping_sub(1);
         }
     }
 
     ///Incriments the register
     pub fn incriment(&mut self) {
         unsafe {
-            self.reg += 1;
+            self.reg = self.reg.wrapping_add(1);
         }
     }
 }
