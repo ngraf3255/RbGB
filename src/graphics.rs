@@ -335,7 +335,7 @@ impl Screen {
         let mut status = mem.read_byte(LCD_STATUS);
 
         // Behavior when lcd is disabled
-        if lcd_enabled {
+        if !lcd_enabled {
             // sets the mode to 1 when the lcd is disabled and resets the scanline
             self.scanline_counter = 456;
             mem.write_byte_forced(CURRENT_SCANLINE, 0); // resets scanline

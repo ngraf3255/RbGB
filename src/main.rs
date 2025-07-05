@@ -69,7 +69,7 @@ fn main() -> Result<(), String> {
                 } => {
                     println!("Enter path to ROM:");
                     let path = "/home/noah/Projects/Rust/game_dir/kirby.gb";
-                    
+
                     if let Err(e) = emulator.load_rom(path.trim()) {
                         println!("Failed to load ROM: {e}");
                     } else {
@@ -189,6 +189,4 @@ impl Emulator {
 }
 
 #[cfg(test)]
-mod test {
-
-}
+mod test {}

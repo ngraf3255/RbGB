@@ -256,7 +256,8 @@ impl CPU {
                 // JR d
                 (0, 3, 0) => {
                     let pc = self.registers.val_pc();
-                    let wz = pc + self.device_memory.lock().unwrap().read_byte(pc) as Word + 1;
+                    let offset = self.device_memory.lock().unwrap().read_byte(pc) as i8;
+                    let wz = ((pc as i16) + offset as i16 + 1) as Word;
                     self.registers.set_pc(wz);
                     self.registers.set_wz(wz);
                     12
@@ -265,7 +266,8 @@ impl CPU {
                 (0, _, 0) => {
                     let pc = self.registers.val_pc();
                     if self.check_condition(y - 4) {
-                        let wz = pc + self.device_memory.lock().unwrap().read_byte(pc) as Word + 1;
+                        let offset = self.device_memory.lock().unwrap().read_byte(pc) as i8;
+                        let wz = ((pc as i16) + offset as i16 + 1) as Word;
                         self.registers.set_pc(wz);
                         self.registers.set_wz(wz);
                         12
@@ -491,7 +493,8 @@ impl CPU {
                         2 => {
                             // OUT (n),A
                             let a = self.registers.val_a();
-                            let _port = (((a as Word) << 8 | self.imm8() as Word) as Word & 0xFFFF) as Word;
+                            let _port =
+                                (((a as Word) << 8 | self.imm8() as Word) as Word & 0xFFFF) as Word;
                             // self.outp(bus, port, a); TODO: Implement port output
                             11
                         }
@@ -593,8 +596,8 @@ impl CPU {
         self.registers.set_b(b);
         if b > 0 {
             let addr = self.registers.val_pc();
-            let d = self.device_memory.lock().unwrap().read_byte(addr) as Word;
-            let wz = addr + d + 1;
+            let d = self.device_memory.lock().unwrap().read_byte(addr) as i8;
+            let wz = ((addr as i16) + d as i16 + 1) as Word;
             self.registers.set_wz(wz);
             self.registers.set_pc(wz);
             13 // return num cycles if branch taken
@@ -956,7 +959,9 @@ impl CPU {
     #[inline(always)]
     pub fn sbc8(&mut self, sub: Byte) {
         let acc = self.registers.val_a();
-        let res = acc.wrapping_sub(sub).wrapping_sub(self.registers.val_f() & CF);
+        let res = acc
+            .wrapping_sub(sub)
+            .wrapping_sub(self.registers.val_f() & CF);
         self.registers.set_f(flags_sub(acc, sub, res));
         self.registers.set_a(res);
     }
