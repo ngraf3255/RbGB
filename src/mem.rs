@@ -5,6 +5,7 @@ use std::{
 
 /// Functions and storage for operating on device memory
 use crate::types::*;
+#[allow(unused_imports)]
 use debug_print::debug_println;
 
 pub type SharedMemory = Arc<Mutex<Memory>>;

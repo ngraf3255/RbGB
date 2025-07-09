@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-
+#[allow(unused_imports)]
 use debug_print::debug_println;
 
 use crate::mem::*;

@@ -103,8 +103,8 @@ fn main() -> Result<(), String> {
 
         // Frame limiting to 60 FPS
         let frame_duration = frame_start.elapsed();
-        if frame_duration < Duration::from_millis(16) {
-            std::thread::sleep(Duration::from_millis(16) - frame_duration);
+        if frame_duration < Duration::from_millis(160) {
+            std::thread::sleep(Duration::from_millis(160) - frame_duration);
         }
     }
 
@@ -121,7 +121,7 @@ struct Emulator {
 impl Emulator {
     /// Calls the needed functions once a frame
     ///
-    const MAXCYCLES: u32 = 69905;
+    const MAXCYCLES: u32 = 1;
 
     pub fn new() -> Self {
         let mem = Arc::new(Mutex::new(Memory::new()));
@@ -129,7 +129,7 @@ impl Emulator {
             screen: graphics::Screen::new(Arc::clone(&mem)),
             cpu: CPU::new(Arc::clone(&mem)),
             memory: mem,
-            paused: false,
+            paused: true,
         }
     }
 
@@ -161,6 +161,7 @@ impl Emulator {
         mem.ram_startup();
         drop(mem);
         self.cpu.reset();
+        self.paused = false;
         Ok(())
     }
 
