@@ -26,7 +26,7 @@ impl Screen {
         }
     }
 
-     pub fn clear(&mut self, color: u8) {
+    pub fn clear(&mut self, color: u8) {
         let (r, g, b) = Self::color_to_rgb(color);
         for chunk in self.buffer.chunks_mut(3) {
             chunk[0] = r;
@@ -75,7 +75,6 @@ impl Screen {
     }
 
     pub fn update_screen(&mut self, cycles: i32) {
-
         // debug_println!("Screen update!");
 
         self.set_lcd_status();

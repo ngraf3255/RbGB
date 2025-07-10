@@ -47,7 +47,7 @@ fn main() -> Result<(), String> {
     let texture_creator = canvas.texture_creator();
 
     let mut texture = texture_creator
-        .create_texture_target(PixelFormatEnum::RGB24, SCREEN_WIDTH, SCREEN_HEIGHT)
+        .create_texture_streaming(PixelFormatEnum::RGB24, SCREEN_WIDTH, SCREEN_HEIGHT)
         .map_err(|e| e.to_string())?;
 
     'running: loop {
@@ -68,7 +68,7 @@ fn main() -> Result<(), String> {
                     ..
                 } => {
                     println!("Enter path to ROM:");
-                    let path = "/home/noah/Projects/Rust/game_dir/kirby.gb";
+                    let path = "roms/kirby.gb";
 
                     if let Err(e) = emulator.load_rom(path.trim()) {
                         println!("Failed to load ROM: {e}");
@@ -85,7 +85,7 @@ fn main() -> Result<(), String> {
 
         // Update the texture with new pixel data
         emulator.blit_rgb_bytes_to_texture(&mut texture)?;
-        
+
         // Draw
         canvas.clear();
         canvas.copy(
@@ -144,10 +144,9 @@ impl Emulator {
             debug_println!("Program Counter: 0x{:X}", self.cpu.registers.val_pc());
             let cycles = self.cpu.execute_next_opcode(false);
             num_cycles += cycles as u32;
-            self.cpu.timers.update_timers(num_cycles as i32);
-            self.screen.update_screen(num_cycles as i32);
+            self.cpu.timers.update_timers(cycles as i32);
+            self.screen.update_screen(cycles as i32);
             self.cpu.handle_interrupts();
-            
         }
         std::thread::sleep(Duration::from_millis(100));
     }
