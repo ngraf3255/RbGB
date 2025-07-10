@@ -353,7 +353,7 @@ let scanline = mem.read_byte(CURRENT_SCANLINE) as i32;                let mut y_
                             continue; // TODO: Add packground handling
                         }
 
-                        let idx = scanline as usize * SCREEN_WIDTH as usize * 3 + pixel as usize;
+                        let idx = (scanline as usize * SCREEN_WIDTH as usize + pixel as usize) * 3;
                         self.buffer[idx] = red;
                         self.buffer[idx + 1] = green;
                         self.buffer[idx + 2] = blue;
