@@ -26,23 +26,55 @@ impl Screen {
         }
     }
 
-    pub fn clear(&mut self, _color: u8) {
-        // TODO: Clear the screen buffer with the given color
-        unimplemented!()
+     pub fn clear(&mut self, color: u8) {
+        let (r, g, b) = Self::color_to_rgb(color);
+        for chunk in self.buffer.chunks_mut(3) {
+            chunk[0] = r;
+            chunk[1] = g;
+            chunk[2] = b;
+        }
     }
 
-    pub fn set_pixel(&mut self, _x: usize, _y: usize, _color: u8) {
-        // TODO: Set a pixel in the buffer
-        unimplemented!()
+    pub fn set_pixel(&mut self, x: usize, y: usize, color: u8) {
+        if x >= SCREEN_WIDTH as usize || y >= SCREEN_HEIGHT as usize {
+            return;
+        }
+        let idx = (y * SCREEN_WIDTH as usize + x) * 3;
+        let (r, g, b) = Self::color_to_rgb(color);
+        self.buffer[idx] = r;
+        self.buffer[idx + 1] = g;
+        self.buffer[idx + 2] = b;
     }
 
-    pub fn get_pixel(&self, _x: usize, _y: usize) -> u8 {
-        // TODO: Get a pixel from the buffer
-        unimplemented!()
+    pub fn get_pixel(&self, x: usize, y: usize) -> u8 {
+        if x >= SCREEN_WIDTH as usize || y >= SCREEN_HEIGHT as usize {
+            return 0;
+        }
+        let idx = (y * SCREEN_WIDTH as usize + x) * 3;
+        let r = self.buffer[idx];
+        let g = self.buffer[idx + 1];
+        let b = self.buffer[idx + 2];
+        Self::rgb_to_color(r, g, b)
+    }
+    fn color_to_rgb(color: u8) -> (u8, u8, u8) {
+        match color {
+            0 => (255, 255, 255),
+            1 => (0xCC, 0xCC, 0xCC),
+            2 => (0x77, 0x77, 0x77),
+            _ => (0, 0, 0),
+        }
+    }
+
+    fn rgb_to_color(r: u8, g: u8, b: u8) -> u8 {
+        match (r, g, b) {
+            (255, 255, 255) => 0,
+            (0xCC, 0xCC, 0xCC) => 1,
+            (0x77, 0x77, 0x77) => 2,
+            _ => 3,
+        }
     }
 
     pub fn update_screen(&mut self, cycles: i32) {
-        //TODO: Create function for updating screen at 60Hz
 
         // debug_println!("Screen update!");
 
@@ -52,6 +84,7 @@ impl Screen {
             self.scanline_counter -= cycles;
         } else {
             // LCD is not enabled so do nothing
+            debug_println!("LCD Disabled");
             return;
         }
 

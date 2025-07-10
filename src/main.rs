@@ -80,12 +80,12 @@ fn main() -> Result<(), String> {
             }
         }
 
-        // Update the texture with new pixel data
-        emulator.blit_rgb_bytes_to_texture(&mut texture)?;
-
         // Emulator main loop
         emulator.update();
 
+        // Update the texture with new pixel data
+        emulator.blit_rgb_bytes_to_texture(&mut texture)?;
+        
         // Draw
         canvas.clear();
         canvas.copy(
@@ -103,8 +103,8 @@ fn main() -> Result<(), String> {
 
         // Frame limiting to 60 FPS
         let frame_duration = frame_start.elapsed();
-        if frame_duration < Duration::from_millis(160) {
-            std::thread::sleep(Duration::from_millis(160) - frame_duration);
+        if frame_duration < Duration::from_millis(16) {
+            std::thread::sleep(Duration::from_millis(16) - frame_duration);
         }
     }
 
@@ -121,10 +121,11 @@ struct Emulator {
 impl Emulator {
     /// Calls the needed functions once a frame
     ///
-    const MAXCYCLES: u32 = 1;
+    const MAXCYCLES: u32 = 69905;
 
     pub fn new() -> Self {
         let mem = Arc::new(Mutex::new(Memory::new()));
+        mem.lock().unwrap().ram_startup();
         Emulator {
             screen: graphics::Screen::new(Arc::clone(&mem)),
             cpu: CPU::new(Arc::clone(&mem)),
@@ -140,12 +141,13 @@ impl Emulator {
         // debug_println!("Main Loop");
         let mut num_cycles: u32 = 0;
         while num_cycles < Self::MAXCYCLES {
+            debug_println!("Program Counter: 0x{:X}", self.cpu.registers.val_pc());
             let cycles = self.cpu.execute_next_opcode(false);
             num_cycles += cycles as u32;
             self.cpu.timers.update_timers(num_cycles as i32);
             self.screen.update_screen(num_cycles as i32);
             self.cpu.handle_interrupts();
-            debug_println!("Program Counter: 0x{:X}", self.cpu.registers.val_pc());
+            
         }
         std::thread::sleep(Duration::from_millis(100));
     }
