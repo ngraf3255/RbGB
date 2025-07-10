@@ -311,7 +311,8 @@ impl Memory {
 
     /// Loads the given ROM bytes into memory
     pub fn load_rom_data(&mut self, data: &[u8]) {
-        let len = data.len().min(0x8000);
+        // puts a lower bound on load size equal to the mem size
+        let len = data.len().min(MEM_SIZE);
         self.mem[..len].copy_from_slice(&data[..len]);
         self.refresh_rom_banking_type();
     }
@@ -650,5 +651,42 @@ mod test {
 
         mem.enable_interrupt(4);
         assert_eq!(mem.read_byte(IE), 1 << 4);
+    }
+
+    #[test]
+    #[timeout(10)]
+    fn test_load_rom_data_small() {
+        let mut mem = Memory::new();
+        let mut data = vec![0u8; 0x200];
+        for (i, b) in data.iter_mut().enumerate() {
+            *b = i as u8;
+        }
+        data[0x147] = 2; // MBC1
+
+        mem.load_rom_data(&data);
+
+        for (i, b) in data.iter().enumerate() {
+            assert_eq!(mem.read_byte(i as Word), *b);
+        }
+        assert_eq!(mem.rom_banking_type, RomBankingType::MBC1);
+        assert_eq!(mem.read_byte(data.len() as Word), 0);
+    }
+
+    #[test]
+    #[timeout(10)]
+    fn test_load_rom_data_truncate() {
+        let mut mem = Memory::new();
+        let mut data = vec![0u8; 0x9000];
+        for (i, b) in data.iter_mut().enumerate() {
+            *b = (i & 0xFF) as u8;
+        }
+        data[0x147] = 1; // MBC1
+
+        mem.load_rom_data(&data);
+
+        for i in 0..0x8000 {
+            assert_eq!(mem.read_byte(i as Word), data[i]);
+        }
+        assert_eq!(mem.read_byte(0x8000), 0);
     }
 }

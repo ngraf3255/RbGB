@@ -13,6 +13,8 @@ use mem::{Memory, SharedMemory};
 use sdl2::{event::Event, keyboard::Keycode, pixels::Color, pixels::PixelFormatEnum, rect::Rect};
 use types::{SCREEN_HEIGHT, SCREEN_WIDTH};
 
+use crate::types::{CURRENT_SCANLINE, LCD_CONTROL};
+
 mod bus;
 mod cpu;
 mod ctc;
@@ -75,6 +77,9 @@ fn main() -> Result<(), String> {
                     } else {
                         println!("ROM loaded");
                     }
+                }
+                Event::KeyDown {keycode: Some(Keycode::O), ..} => {
+                    emulator.dump_lcd_mem();
                 }
                 _ => {}
             }
@@ -141,7 +146,7 @@ impl Emulator {
         // debug_println!("Main Loop");
         let mut num_cycles: u32 = 0;
         while num_cycles < Self::MAXCYCLES {
-            debug_println!("Program Counter: 0x{:X}", self.cpu.registers.val_pc());
+            //debug_println!("Program Counter: 0x{:X}", self.cpu.registers.val_pc());
             let cycles = self.cpu.execute_next_opcode(false);
             num_cycles += cycles as u32;
             self.cpu.timers.update_timers(cycles as i32);
@@ -187,6 +192,20 @@ impl Emulator {
             .map_err(|e| e.to_string())?; // possibly replace with ?
         // // debug_println!("Blit successful. ");
         Ok(())
+    }
+
+    pub fn dump_lcd_mem(&self) {
+        let mem = self.memory.lock().unwrap();
+
+        debug_println!("IDK: {:X}", mem.read_byte_forced(0xFF26));
+        debug_println!("LCD Control: {:X}", mem.read_byte_forced(LCD_CONTROL));
+        debug_println!("Scroll Y: {:X}", mem.read_byte_forced(0xFF42));
+        debug_println!("Scroll X: {:X}", mem.read_byte_forced(0xFF43));
+        debug_println!("BG Palette: {:X}", mem.read_byte_forced(0xFF47));
+        debug_println!("OBJ palette: {:X}", mem.read_byte_forced(0xFF48));
+        debug_println!("Current Scanline: {:X}", mem.read_byte_forced(CURRENT_SCANLINE));
+        debug_println!("LCD Control: {:X}", mem.read_byte_forced(LCD_CONTROL));
+
     }
 }
 

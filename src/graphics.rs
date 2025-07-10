@@ -92,7 +92,7 @@ impl Screen {
         // debug_println!("Check scanlines!");
         if self.scanline_counter <= 0 {
             // Time to move onto the next scanline
-            let scanline = mem.read_byte(CURRENT_SCANLINE) + 1;
+            let scanline = mem.read_byte(CURRENT_SCANLINE).wrapping_add(1);
             mem.write_byte_forced(CURRENT_SCANLINE, scanline);
 
             self.scanline_counter = 456;
@@ -132,6 +132,7 @@ impl Screen {
     }
 
     fn render_tiles(&mut self, control: Byte) {
+        debug_println!("Rendering tile, control: {:b}", control);
         let mem = self.device_memory.lock().unwrap();
 
         let tile_data;
@@ -146,8 +147,10 @@ impl Screen {
 
         let using_window;
 
+        debug_println!("Control Status {}", control & (1 << 5) != 0);
         // is the window enabled?
-        if control & (1 << 5) != 0 {
+        if control & (1 << 4) != 0 {
+            debug_println!("Window enabled");
             using_window = window_y <= mem.read_byte(CURRENT_SCANLINE);
 
             // which tile data?
@@ -177,7 +180,7 @@ impl Screen {
                 mem.read_byte(CURRENT_SCANLINE) - window_y
             };
 
-            let tile_row = (y_pos / 8) * 32;
+            let tile_row: u32 = (y_pos / 8) as u32 * 32;
 
             for pixel in 0..SCREEN_WIDTH as Byte {
                 let mut x_pos = pixel + scroll_x;
@@ -240,6 +243,7 @@ impl Screen {
                 }
 
                 let idx = (line as usize * SCREEN_WIDTH as usize + pixel as usize) * 3;
+                debug_println!("Writing idx: {idx}");
                 self.buffer[idx] = red;
                 self.buffer[idx + 1] = green;
                 self.buffer[idx + 2] = blue;
