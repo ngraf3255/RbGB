@@ -78,7 +78,10 @@ fn main() -> Result<(), String> {
                         println!("ROM loaded");
                     }
                 }
-                Event::KeyDown {keycode: Some(Keycode::O), ..} => {
+                Event::KeyDown {
+                    keycode: Some(Keycode::O),
+                    ..
+                } => {
                     emulator.dump_lcd_mem();
                 }
                 _ => {}
@@ -203,9 +206,11 @@ impl Emulator {
         debug_println!("Scroll X: {:X}", mem.read_byte_forced(0xFF43));
         debug_println!("BG Palette: {:X}", mem.read_byte_forced(0xFF47));
         debug_println!("OBJ palette: {:X}", mem.read_byte_forced(0xFF48));
-        debug_println!("Current Scanline: {:X}", mem.read_byte_forced(CURRENT_SCANLINE));
+        debug_println!(
+            "Current Scanline: {:X}",
+            mem.read_byte_forced(CURRENT_SCANLINE)
+        );
         debug_println!("LCD Control: {:X}", mem.read_byte_forced(LCD_CONTROL));
-
     }
 }
 

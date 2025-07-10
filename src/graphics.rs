@@ -242,7 +242,7 @@ impl Screen {
                     panic!("Invalid print location"); // crash program
                 }
 
-                let idx = (line as usize * SCREEN_WIDTH as usize + pixel as usize) * 3;
+                let idx = (line as usize * SCREEN_WIDTH  as usize + pixel as usize) * 3;
                 debug_println!("Writing idx: {idx}");
                 self.buffer[idx] = red;
                 self.buffer[idx + 1] = green;
@@ -263,23 +263,21 @@ impl Screen {
 
             for sprite in 0..40 {
                 let index = sprite * 4;
-                let y_pos = mem.read_byte(0xFE00 + index) - 16;
-                let x_pos = mem.read_byte(0xFE00 + index + 1) - 8;
-                let tile_location = mem.read_byte(0xFE00 + index + 2);
+                let y_pos = mem.read_byte(0xFE00 + index) as i32 - 16;
+                let x_pos = mem.read_byte(0xFE00 + index + 1) as i32 - 8;                let tile_location = mem.read_byte(0xFE00 + index + 2);
                 let attributes = mem.read_byte(0xFE00 + index + 3);
 
                 let y_flip = attributes & (1 << 6) != 0;
                 let x_flip = attributes & (1 << 5) != 0;
 
-                let scanline = mem.read_byte(CURRENT_SCANLINE);
-                let mut y_size = 8;
+let scanline = mem.read_byte(CURRENT_SCANLINE) as i32;                let mut y_size = 8;
 
                 if use8x16 {
                     y_size = 16;
                 }
 
                 if (scanline >= y_pos) && (scanline < (y_pos + y_size)) {
-                    let mut line = (scanline - y_pos) as i32;
+                    let mut line = scanline - y_pos;
 
                     if y_flip {
                         line -= y_size as i32;
@@ -340,18 +338,22 @@ impl Screen {
                             }
                         }
 
-                        let x_pix = 0 - tile_pixel + 7;
+                        let x_pix = 7 - tile_pixel;
                         let pixel = x_pos + x_pix;
 
-                        if (scanline > SCREEN_HEIGHT as u8) || (scanline > SCREEN_WIDTH as u8) {
-                            panic!("Invalid print location"); // crash program
+                        if pixel < 0
+                            || pixel >= SCREEN_WIDTH as i32
+                            || scanline < 0
+                            || scanline >= SCREEN_HEIGHT as i32
+                        {
+                            continue;
                         }
 
                         if attributes & (1 << 7) != 0 {
                             continue; // TODO: Add packground handling
                         }
 
-                        let idx = (scanline as usize * SCREEN_WIDTH as usize + pixel as usize) * 3;
+                        let idx = scanline as usize * SCREEN_WIDTH as usize * 3 + pixel as usize;
                         self.buffer[idx] = red;
                         self.buffer[idx + 1] = green;
                         self.buffer[idx + 2] = blue;
