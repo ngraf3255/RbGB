@@ -73,6 +73,9 @@ impl Memory {
             self.mem[addr as usize] = value;
             self.write_byte(addr - 0x2000, value);
         }
+        else if addr == 0xFF80 {
+            return;
+        }
         // restricted memory area
         else if (0xFEA0..0xFEFF).contains(&addr) {
             //TODO: implement error handling here (likely throw some kind of interrupt)

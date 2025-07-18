@@ -206,7 +206,7 @@ impl Screen {
                 let data2 = mem.read_byte(tile_location + line as Word + 1);
 
                 let color_bit: i32 = -((x_pos as u32 % 8) as i32 - 7);
-                let color_num = ((data2 & (1 << color_bit)) >> color_bit)
+                let color_num = (((data2 & (1 << color_bit)) >> color_bit) << 1)
                     | ((data1 & (1 << color_bit)) >> color_bit);
 
                 let color: Color = mem.get_color(color_num, 0xFF47);
@@ -242,7 +242,7 @@ impl Screen {
                     panic!("Invalid print location"); // crash program
                 }
 
-                let idx = (line as usize * SCREEN_WIDTH  as usize + pixel as usize) * 3;
+                let idx = (line as usize * SCREEN_WIDTH as usize + pixel as usize) * 3;
                 debug_println!("Writing idx: {idx}");
                 self.buffer[idx] = red;
                 self.buffer[idx + 1] = green;
@@ -264,13 +264,15 @@ impl Screen {
             for sprite in 0..40 {
                 let index = sprite * 4;
                 let y_pos = mem.read_byte(0xFE00 + index) as i32 - 16;
-                let x_pos = mem.read_byte(0xFE00 + index + 1) as i32 - 8;                let tile_location = mem.read_byte(0xFE00 + index + 2);
+                let x_pos = mem.read_byte(0xFE00 + index + 1) as i32 - 8;
+                let tile_location = mem.read_byte(0xFE00 + index + 2);
                 let attributes = mem.read_byte(0xFE00 + index + 3);
 
                 let y_flip = attributes & (1 << 6) != 0;
                 let x_flip = attributes & (1 << 5) != 0;
 
-let scanline = mem.read_byte(CURRENT_SCANLINE) as i32;                let mut y_size = 8;
+                let scanline = mem.read_byte(CURRENT_SCANLINE) as i32;
+                let mut y_size = 8;
 
                 if use8x16 {
                     y_size = 16;
@@ -280,7 +282,7 @@ let scanline = mem.read_byte(CURRENT_SCANLINE) as i32;                let mut y_
                     let mut line = scanline - y_pos;
 
                     if y_flip {
-                        line -= y_size as i32;
+                        line -= y_size;
                         line *= -1;
                     }
 
@@ -291,7 +293,7 @@ let scanline = mem.read_byte(CURRENT_SCANLINE) as i32;                let mut y_
                         mem.read_byte((0x8000 + (tile_location as Word * 16)) + line as Word + 1);
 
                     for tile_pixel in (0..=7).rev() {
-                        let mut color_bit = tile_pixel as i32;
+                        let mut color_bit = tile_pixel;
 
                         if x_flip {
                             color_bit -= 7;
@@ -442,9 +444,8 @@ let scanline = mem.read_byte(CURRENT_SCANLINE) as i32;                let mut y_
         // debug_println!("Checking if LCD is enabled");
         let mem = self.device_memory.lock().unwrap();
         // debug_println!("Lock aquired");
-        let x = mem.read_byte(LCD_CONTROL) & (1 << 7) != 0;
+        mem.read_byte(LCD_CONTROL) & (1 << 7) != 0
         // debug_println!("Check complete");
-        x
     }
 
     // TODO: Add more methods for drawing, sprites, etc.
