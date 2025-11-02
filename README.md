@@ -66,7 +66,7 @@ To build and run tests locally:
 <!--START_SECTION:waka-->
 
 ```rust
-From: 18 June 2025 - To: 25 October 2025
+From: 18 June 2025 - To: 01 November 2025
 
 Total Time: 66 hrs 21 mins
 
