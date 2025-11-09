@@ -66,16 +66,16 @@ To build and run tests locally:
 <!--START_SECTION:waka-->
 
 ```rust
-From: 18 June 2025 - To: 01 November 2025
+From: 18 June 2025 - To: 08 November 2025
 
-Total Time: 66 hrs 21 mins
+Total Time: 66 hrs 25 mins
 
-C                25 hrs 7 mins   █████████▒░░░░░░░░░░░░░░░   37.04 %
-Rust             17 hrs 38 mins  ██████▓░░░░░░░░░░░░░░░░░░   26.00 %
+C                25 hrs 11 mins  █████████▒░░░░░░░░░░░░░░░   37.11 %
+Rust             17 hrs 38 mins  ██████▒░░░░░░░░░░░░░░░░░░   25.97 %
 Python           4 hrs 38 mins   █▓░░░░░░░░░░░░░░░░░░░░░░░   06.85 %
-C++              3 hrs 49 mins   █▒░░░░░░░░░░░░░░░░░░░░░░░   05.63 %
+C++              3 hrs 49 mins   █▒░░░░░░░░░░░░░░░░░░░░░░░   05.62 %
 HTML             3 hrs 17 mins   █▒░░░░░░░░░░░░░░░░░░░░░░░   04.85 %
-JSON             2 hrs 44 mins   █░░░░░░░░░░░░░░░░░░░░░░░░   04.04 %
+JSON             2 hrs 44 mins   █░░░░░░░░░░░░░░░░░░░░░░░░   04.03 %
 JavaScript       2 hrs 36 mins   █░░░░░░░░░░░░░░░░░░░░░░░░   03.85 %
 Markdown         1 hr 33 mins    ▓░░░░░░░░░░░░░░░░░░░░░░░░   02.30 %
 Other            1 hr 27 mins    ▓░░░░░░░░░░░░░░░░░░░░░░░░   02.15 %
