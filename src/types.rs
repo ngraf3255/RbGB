@@ -21,6 +21,41 @@ pub const TMA: Word = 0xFF06;
 pub const TMC: Word = 0xFF07;
 pub const DIVIDER_REGISTER: Word = 0xFF04;
 pub const CLOCKSPEED: u32 = 4194304;
+/// CPU carry flag
+pub const CF: Byte = 1 << 0;
+/// CPU add/subtract flag
+pub const NF: Byte = 1 << 1;
+/// CPU overflow flag (same as parity)
+pub const VF: Byte = 1 << 2;
+/// CPU parity flag (same as overflow)
+pub const PF: Byte = 1 << 2;
+/// CPU undocumented 'X' flag
+pub const XF: Byte = 1 << 3;
+/// CPU half carry flag
+pub const HF: Byte = 1 << 4;
+/// CPU undocumented 'Y' flag
+pub const YF: Byte = 1 << 5;
+/// CPU zero flag
+pub const ZF: Byte = 1 << 6;
+/// CPU sign flag
+pub const SF: Byte = 1 << 7;
+
+pub const BC: Byte = 0;
+pub const DE: Byte = 2;
+pub const HL: Byte = 4;
+pub const AF: Byte = 6;
+pub const IX: Byte = 8;
+pub const IY: Byte = 10;
+pub const SP: Byte = 12;
+pub const WZ: Byte = 14;
+pub const BC_: Byte = 16;
+pub const DE_: Byte = 18;
+pub const HL_: Byte = 20;
+pub const AF_: Byte = 22;
+pub const WZ_: Byte = 24;
+
+pub const SP_TABLE: [Byte; 4] = [BC, DE, HL, SP]; //TODO: Change to localize as global so compiler doesn't inline the table
+pub const AF_TABLE: [Byte; 4] = [BC, DE, HL, AF];
 
 // Interrupt Constants
 pub const IE: Word = 0xFFFF; // Interrupt enabled register

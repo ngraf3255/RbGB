@@ -1,8 +1,8 @@
 #![allow(dead_code)]
-
+#[allow(unused_imports)]
 use debug_print::debug_println;
 
-use crate::mem::*;
+use crate::emulator::mem::*;
 use crate::types::*;
 
 /// Basic implementation and methods for the LCD Screen
@@ -26,25 +26,56 @@ impl Screen {
         }
     }
 
-    pub fn clear(&mut self, _color: u8) {
-        // TODO: Clear the screen buffer with the given color
-        unimplemented!()
+    pub fn clear(&mut self, color: u8) {
+        let (r, g, b) = Self::color_to_rgb(color);
+        for chunk in self.buffer.chunks_mut(3) {
+            chunk[0] = r;
+            chunk[1] = g;
+            chunk[2] = b;
+        }
     }
 
-    pub fn set_pixel(&mut self, _x: usize, _y: usize, _color: u8) {
-        // TODO: Set a pixel in the buffer
-        unimplemented!()
+    pub fn set_pixel(&mut self, x: usize, y: usize, color: u8) {
+        if x >= SCREEN_WIDTH as usize || y >= SCREEN_HEIGHT as usize {
+            return;
+        }
+        let idx = (y * SCREEN_WIDTH as usize + x) * 3;
+        let (r, g, b) = Self::color_to_rgb(color);
+        self.buffer[idx] = r;
+        self.buffer[idx + 1] = g;
+        self.buffer[idx + 2] = b;
     }
 
-    pub fn get_pixel(&self, _x: usize, _y: usize) -> u8 {
-        // TODO: Get a pixel from the buffer
-        unimplemented!()
+    pub fn get_pixel(&self, x: usize, y: usize) -> u8 {
+        if x >= SCREEN_WIDTH as usize || y >= SCREEN_HEIGHT as usize {
+            return 0;
+        }
+        let idx = (y * SCREEN_WIDTH as usize + x) * 3;
+        let r = self.buffer[idx];
+        let g = self.buffer[idx + 1];
+        let b = self.buffer[idx + 2];
+        Self::rgb_to_color(r, g, b)
+    }
+    fn color_to_rgb(color: u8) -> (u8, u8, u8) {
+        match color {
+            0 => (255, 255, 255),
+            1 => (0xCC, 0xCC, 0xCC),
+            2 => (0x77, 0x77, 0x77),
+            _ => (0, 0, 0),
+        }
+    }
+
+    fn rgb_to_color(r: u8, g: u8, b: u8) -> u8 {
+        match (r, g, b) {
+            (255, 255, 255) => 0,
+            (0xCC, 0xCC, 0xCC) => 1,
+            (0x77, 0x77, 0x77) => 2,
+            _ => 3,
+        }
     }
 
     pub fn update_screen(&mut self, cycles: i32) {
-        //TODO: Create function for updating screen at 60Hz
-
-        debug_println!("Screen update!");
+        // debug_println!("Screen update!");
 
         self.set_lcd_status();
 
@@ -52,21 +83,22 @@ impl Screen {
             self.scanline_counter -= cycles;
         } else {
             // LCD is not enabled so do nothing
+            //debug_println!("LCD Disabled");
             return;
         }
 
         let mut mem = self.device_memory.lock().unwrap();
 
-        debug_println!("Check scanlines!");
+        // debug_println!("Check scanlines!");
         if self.scanline_counter <= 0 {
             // Time to move onto the next scanline
-            let scanline = mem.read_byte(CURRENT_SCANLINE) + 1;
+            let scanline = mem.read_byte(CURRENT_SCANLINE).wrapping_add(1);
             mem.write_byte_forced(CURRENT_SCANLINE, scanline);
 
             self.scanline_counter = 456;
 
             // we are now in the vertical blank period
-            debug_println!("Current Scanline is {scanline}");
+            // debug_println!("Current Scanline is {scanline}");
             if scanline == 144 {
                 mem.request_interrupt(0);
             }
@@ -100,118 +132,89 @@ impl Screen {
     }
 
     fn render_tiles(&mut self, control: Byte) {
+        debug_println!("Rendering tile, control: {:b}", control);
         let mem = self.device_memory.lock().unwrap();
 
-        let tile_data;
-        let background_memory: Word;
         let mut unsigned = true;
+        let tile_data = if control & (1 << 4) != 0 {
+            0x8000
+        } else {
+            unsigned = false;
+            0x8800
+        };
 
         // where to draw the visual area and the window
         let scroll_y = mem.read_byte(0xFF42);
         let scroll_x = mem.read_byte(0xFF43);
         let window_y = mem.read_byte(0xFF4A);
-        let window_x = mem.read_byte(0xFF4B) - 7;
+        let window_x = mem.read_byte(0xFF4B).wrapping_sub(7);
+        let current_line = mem.read_byte(CURRENT_SCANLINE);
+        let using_window = (control & (1 << 5) != 0) && window_y <= current_line;
 
-        let using_window;
-
-        // is the window enabled?
-        if control & (1 << 5) != 0 {
-            using_window = window_y <= mem.read_byte(CURRENT_SCANLINE);
-
-            // which tile data?
-            if control & (1 << 4) != 0 {
-                tile_data = 0x8000;
+        // determine which tile map to use
+        let background_memory: Word = if using_window {
+            if control & (1 << 6) != 0 {
+                0x9C00
             } else {
-                tile_data = 0x8800;
-                unsigned = false;
+                0x9800
+            }
+        } else if control & (1 << 3) != 0 {
+            0x9C00
+        } else {
+            0x9800
+        };
+
+        let y_pos = if using_window {
+            current_line.wrapping_sub(window_y)
+        } else {
+            scroll_y.wrapping_add(current_line)
+        };
+
+        let tile_row: Word = ((y_pos / 8) as Word) * 32;
+
+        for pixel in 0..SCREEN_WIDTH as Byte {
+            let mut x_pos = pixel.wrapping_add(scroll_x);
+            if using_window && pixel >= window_x {
+                x_pos = pixel.wrapping_sub(window_x);
             }
 
-            // which background mem?
-            if !using_window {
-                if control & (1 << 3) != 0 {
-                    background_memory = 0x9C00;
-                } else {
-                    background_memory = 0x9800;
-                }
-            } else if control & (1 << 6) != 0 {
-                background_memory = 0x9C00;
+            let tile_column = (x_pos / 8) as Word;
+            let tile_num = mem.read_byte(background_memory + tile_row + tile_column);
+
+            let mut tile_location: Word = tile_data;
+            if unsigned {
+                tile_location += tile_num as Word * 16;
             } else {
-                background_memory = 0x9800;
+                let signed = tile_num as i8 as i16;
+                tile_location += ((signed + 128) as Word) * 16;
             }
 
-            let y_pos = if !using_window {
-                scroll_y + mem.read_byte(CURRENT_SCANLINE)
-            } else {
-                mem.read_byte(CURRENT_SCANLINE) - window_y
+            let line = (y_pos % 8) * 2;
+            let data1 = mem.read_byte(tile_location + line as Word);
+            let data2 = mem.read_byte(tile_location + line as Word + 1);
+
+            let color_bit = 7 - (x_pos % 8);
+            let color_num = (((data2 >> color_bit) & 1) << 1) | ((data1 >> color_bit) & 1);
+
+            let color: Color = mem.get_color(color_num, 0xFF47);
+            let (red, green, blue) = match color {
+                Color::White => (255, 255, 255),
+                Color::LightGrey => (0xCC, 0xCC, 0xCC),
+                Color::DarkGrey => (0x77, 0x77, 0x77),
+                Color::Black => (0, 0, 0),
             };
 
-            let tile_row = (y_pos / 8) * 32;
-
-            for pixel in 0..SCREEN_WIDTH as Byte {
-                let mut x_pos = pixel + scroll_x;
-                if using_window && pixel >= window_x {
-                    x_pos = pixel - window_x;
-                }
-
-                let tile_column = x_pos / 8;
-                let tile_num = mem.read_byte(
-                    (background_memory + tile_row as Word + tile_column as Word) as Word,
-                );
-
-                let mut tile_location: Word = tile_data;
-
-                if unsigned {
-                    tile_location += tile_num as Word * 16;
-                } else {
-                    tile_location += (tile_num as Word + 128) * 16;
-                }
-
-                let line = (y_pos % 8) * 2;
-                let data1 = mem.read_byte(tile_location + line as Word);
-                let data2 = mem.read_byte(tile_location + line as Word + 1);
-
-                let color_bit: i32 = -((x_pos as u32 % 8) as i32 - 7);
-                let color_num = ((data2 & (1 << color_bit)) >> color_bit)
-                    | ((data1 & (1 << color_bit)) >> color_bit);
-
-                let color: Color = mem.get_color(color_num, 0xFF47);
-                let red;
-                let blue;
-                let green;
-
-                match color {
-                    Color::White => {
-                        red = 255;
-                        green = 255;
-                        blue = 255;
-                    }
-                    Color::LightGrey => {
-                        red = 0xCC;
-                        green = 0xCC;
-                        blue = 0xCC;
-                    }
-                    Color::DarkGrey => {
-                        red = 0x77;
-                        green = 0x77;
-                        blue = 0x77;
-                    }
-                    Color::Black => {
-                        red = 0;
-                        green = 0;
-                        blue = 0;
-                    }
-                }
-
-                let line = mem.read_byte(CURRENT_SCANLINE);
-                if (line >= SCREEN_HEIGHT as u8) || (pixel >= SCREEN_WIDTH as u8) {
-                    panic!("Invalid print location"); // crash program
-                }
-
-                let idx = (line as usize * SCREEN_WIDTH as usize + pixel as usize) * 3;
-                self.buffer[idx] = red;
-                self.buffer[idx + 1] = green;
-                self.buffer[idx + 2] = blue;
+            if current_line as usize >= SCREEN_HEIGHT as usize
+                || pixel as usize >= SCREEN_WIDTH as usize
+            {
+                continue;
             }
+
+            let idx = (current_line as usize * SCREEN_WIDTH as usize + pixel as usize) * 3;
+            //debug_println!("Writing idx: {idx}");
+            self.buffer[idx] = red;
+            self.buffer[idx + 1] = green;
+            self.buffer[idx + 2] = blue;
         }
     }
 
@@ -227,15 +230,15 @@ impl Screen {
 
             for sprite in 0..40 {
                 let index = sprite * 4;
-                let y_pos = mem.read_byte(0xFE00 + index) - 16;
-                let x_pos = mem.read_byte(0xFE00 + index + 1) - 8;
+                let y_pos = mem.read_byte(0xFE00 + index) as i32 - 16;
+                let x_pos = mem.read_byte(0xFE00 + index + 1) as i32 - 8;
                 let tile_location = mem.read_byte(0xFE00 + index + 2);
                 let attributes = mem.read_byte(0xFE00 + index + 3);
 
                 let y_flip = attributes & (1 << 6) != 0;
                 let x_flip = attributes & (1 << 5) != 0;
 
-                let scanline = mem.read_byte(CURRENT_SCANLINE);
+                let scanline = mem.read_byte(CURRENT_SCANLINE) as i32;
                 let mut y_size = 8;
 
                 if use8x16 {
@@ -243,10 +246,10 @@ impl Screen {
                 }
 
                 if (scanline >= y_pos) && (scanline < (y_pos + y_size)) {
-                    let mut line = (scanline - y_pos) as i32;
+                    let mut line = scanline - y_pos;
 
                     if y_flip {
-                        line -= y_size as i32;
+                        line -= y_size;
                         line *= -1;
                     }
 
@@ -257,7 +260,7 @@ impl Screen {
                         mem.read_byte((0x8000 + (tile_location as Word * 16)) + line as Word + 1);
 
                     for tile_pixel in (0..=7).rev() {
-                        let mut color_bit = tile_pixel as i32;
+                        let mut color_bit = tile_pixel;
 
                         if x_flip {
                             color_bit -= 7;
@@ -304,11 +307,15 @@ impl Screen {
                             }
                         }
 
-                        let x_pix = 0 - tile_pixel + 7;
+                        let x_pix = 7 - tile_pixel;
                         let pixel = x_pos + x_pix;
 
-                        if (scanline > SCREEN_HEIGHT as u8) || (scanline > SCREEN_WIDTH as u8) {
-                            panic!("Invalid print location"); // crash program
+                        if pixel < 0
+                            || pixel >= SCREEN_WIDTH as i32
+                            || scanline < 0
+                            || scanline >= SCREEN_HEIGHT as i32
+                        {
+                            continue;
                         }
 
                         if attributes & (1 << 7) != 0 {
@@ -326,7 +333,7 @@ impl Screen {
     }
 
     fn set_lcd_status(&mut self) {
-        debug_println!("Updating LCD Status!");
+        // debug_println!("Updating LCD Status!");
 
         let lcd_enabled = self.is_lcd_enabled();
         // Gets lock on memory
@@ -335,7 +342,7 @@ impl Screen {
         let mut status = mem.read_byte(LCD_STATUS);
 
         // Behavior when lcd is disabled
-        if lcd_enabled {
+        if !lcd_enabled {
             // sets the mode to 1 when the lcd is disabled and resets the scanline
             self.scanline_counter = 456;
             mem.write_byte_forced(CURRENT_SCANLINE, 0); // resets scanline
@@ -352,7 +359,7 @@ impl Screen {
         let mode;
         let mut require_interrupt = false;
 
-        debug_println!("Current scanline is {current_line} and mode is {current_mode}");
+        // debug_println!("Current scanline is {current_line} and mode is {current_mode}");
 
         // in vblank so mode is set to 1
         if current_line >= 144 {
@@ -401,12 +408,11 @@ impl Screen {
 
     fn is_lcd_enabled(&mut self) -> bool {
         // Check bit 7 of LCD Control register (0xFF40)
-        debug_println!("Checking if LCD is enabled");
+        // debug_println!("Checking if LCD is enabled");
         let mem = self.device_memory.lock().unwrap();
-        debug_println!("Lock aquired");
-        let x = mem.read_byte(LCD_CONTROL) & (1 << 7) != 0;
-        debug_println!("Check complete");
-        x
+        // debug_println!("Lock aquired");
+        mem.read_byte(LCD_CONTROL) & (1 << 7) != 0
+        // debug_println!("Check complete");
     }
 
     // TODO: Add more methods for drawing, sprites, etc.

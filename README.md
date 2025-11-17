@@ -5,11 +5,11 @@ A simple Game Boy emulator written in Rust.
 ## Features
 
 - CPU emulation (Sharp LR35902)
-- Memory management
+- Shared Memory bank
 - Basic graphics rendering
 - ROM loading
 
-## Getting Started
+## Repo Basics
 
 1. Clone the repository:
 
@@ -60,6 +60,7 @@ To build and run tests locally:
 - Modify register system to allow them to be set more gracefully
 - Add DOCKERFILE to containerize (annoyed me when sdl2 wasn't installing)
 - Trim workflow to reflect new docker container
+- Implement custom cpu opcode handling
 
 ## Coding Statistics
 
@@ -82,6 +83,10 @@ Other            1 hr 42 mins    ▓░░░░░░░░░░░░░░�
 ```
 
 <!--END_SECTION:waka-->
+
+## Acknowledgements
+
+Much of this was written and based off of [Codeslinger Gameboy](http://www.codeslinger.co.uk/pages/projects/gameboy/beginning.html). I needed this guide to get through most of this. Additionally, I learned about how the RZ80 worked from [RZ80](https://floooh.github.io/) and modified the CPU implementation of the LR35902 from  [rboy](https://github.com/mvdnes/rboy). Getting the CPU emulation to work was the hardest part of this project.
 
 ## License
 
