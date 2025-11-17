@@ -83,7 +83,7 @@ impl Screen {
             self.scanline_counter -= cycles;
         } else {
             // LCD is not enabled so do nothing
-            debug_println!("LCD Disabled");
+            //debug_println!("LCD Disabled");
             return;
         }
 
