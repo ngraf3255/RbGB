@@ -82,7 +82,7 @@ Other      0 secs          ░░░░░░░░░░░░░░░░░�
 
 ## Acknowledgements
 
-Much of this was written and based off of [Codeslinger Gameboy](http://www.codeslinger.co.uk/pages/projects/gameboy/beginning.html). I needed this guide to get through most of this. Additionally, code for cpu instructions was modified from [RZ80](https://floooh.github.io/)
+Much of this was written and based off of [Codeslinger Gameboy](http://www.codeslinger.co.uk/pages/projects/gameboy/beginning.html). I needed this guide to get through most of this. Additionally, code for cpu instructions was modified from [RZ80](https://floooh.github.io/) <https://github.com/mvdnes/rboy>
 
 ## License
 

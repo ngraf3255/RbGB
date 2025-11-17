@@ -149,8 +149,7 @@ impl Screen {
         let window_y = mem.read_byte(0xFF4A);
         let window_x = mem.read_byte(0xFF4B).wrapping_sub(7);
         let current_line = mem.read_byte(CURRENT_SCANLINE);
-        let using_window =
-            (control & (1 << 5) != 0) && window_y <= current_line;
+        let using_window = (control & (1 << 5) != 0) && window_y <= current_line;
 
         // determine which tile map to use
         let background_memory: Word = if using_window {
@@ -180,14 +179,14 @@ impl Screen {
             }
 
             let tile_column = (x_pos / 8) as Word;
-            let tile_num =
-                mem.read_byte(background_memory + tile_row + tile_column);
+            let tile_num = mem.read_byte(background_memory + tile_row + tile_column);
 
             let mut tile_location: Word = tile_data;
             if unsigned {
                 tile_location += tile_num as Word * 16;
             } else {
-                tile_location += (tile_num as Word + 128) * 16;
+                let signed = tile_num as i8 as i16;
+                tile_location += ((signed + 128) as Word) * 16;
             }
 
             let line = (y_pos % 8) * 2;
@@ -195,8 +194,7 @@ impl Screen {
             let data2 = mem.read_byte(tile_location + line as Word + 1);
 
             let color_bit = 7 - (x_pos % 8);
-            let color_num =
-                (((data2 >> color_bit) & 1) << 1) | ((data1 >> color_bit) & 1);
+            let color_num = (((data2 >> color_bit) & 1) << 1) | ((data1 >> color_bit) & 1);
 
             let color: Color = mem.get_color(color_num, 0xFF47);
             let (red, green, blue) = match color {
@@ -212,9 +210,8 @@ impl Screen {
                 continue;
             }
 
-            let idx =
-                (current_line as usize * SCREEN_WIDTH as usize + pixel as usize) * 3;
-            debug_println!("Writing idx: {idx}");
+            let idx = (current_line as usize * SCREEN_WIDTH as usize + pixel as usize) * 3;
+            //debug_println!("Writing idx: {idx}");
             self.buffer[idx] = red;
             self.buffer[idx + 1] = green;
             self.buffer[idx + 2] = blue;

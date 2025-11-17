@@ -7,7 +7,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use cpu::CPU;
+use cpu_gb::CPU;
 use debug_print::debug_println;
 use mem::{Memory, SharedMemory};
 use types::{SCREEN_HEIGHT, SCREEN_WIDTH};
@@ -16,7 +16,7 @@ use crate::types::{CURRENT_SCANLINE, LCD_CONTROL};
 use sdl::SdlApp;
 
 mod bus;
-mod cpu;
+mod cpu_gb;
 mod ctc;
 mod graphics;
 mod mem;
@@ -91,8 +91,8 @@ impl Emulator {
         let mut mem = self.memory.lock().unwrap();
         mem.load_rom_data(&data);
         mem.ram_startup();
-        drop(mem);
         self.cpu.reset();
+
         self.paused = false;
         Ok(())
     }

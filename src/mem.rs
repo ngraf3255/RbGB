@@ -12,6 +12,7 @@ pub type SharedMemory = Arc<Mutex<Memory>>;
 
 pub struct Memory {
     mem: Ram,
+    rom: Vec<Byte>,
     external_ram: [[Byte; 0x2000]; 4],
     rom_banking_type: RomBankingType,
     rom_banks: CurrentRomBank,
@@ -26,6 +27,7 @@ impl Memory {
     pub fn new() -> Self {
         Memory {
             mem: [0; MEM_SIZE],
+            rom: Vec::new(),
             external_ram: [[0; 0x2000]; 4],
             rom_banking_type: RomBankingType::None,
             rom_banks: CurrentRomBank::Bank(1),
@@ -39,22 +41,7 @@ impl Memory {
 
     // Wrapper for memory read functionality
     pub fn read_byte(&self, addr: Word) -> Byte {
-        // debug_println!("Reading byte at addr 0x{:X}", addr);
-        // are we reading from the rom memory bank?
-        if (0x4000..0x7FFF).contains(&addr) {
-            let addr = addr as usize - 0x4000;
-
-            self.mem[addr + ((self.rom_banks.value() as usize) * 0x4000)]
-        } else if (0xA000..=0xBFFF).contains(&addr) {
-            // RAM bank storage and indexing
-            let offset = (addr - 0xA000) as usize;
-            let bank = self.ram_banks as usize;
-            self.external_ram[bank][offset]
-        } else {
-            // debug_println!("VALID READ");
-            // Else return memory
-            self.mem[addr as usize]
-        }
+        self.read_byte_internal(addr)
     }
 
     // Wrapper for memory write functionality
@@ -105,6 +92,17 @@ impl Memory {
     ///
     /// Be careful as there are no bounds on providing the wrong mem index
     pub fn write_byte_forced(&mut self, addr: Word, value: Byte) {
+        if addr < 0x8000 {
+            let index = addr as usize;
+            if self.rom.len() <= index {
+                self.rom.resize(index + 1, 0);
+            }
+            self.rom[index] = value;
+        } else if (0xA000..=0xBFFF).contains(&addr) {
+            let offset = (addr - 0xA000) as usize;
+            let bank = self.ram_banks as usize;
+            self.external_ram[bank][offset] = value;
+        }
         //Sets byte
         self.mem[addr as usize] = value;
     }
@@ -114,13 +112,13 @@ impl Memory {
         let l = value & 0xff;
         let h = (value >> 8) & 0xff;
         self.write_byte(addr, l as Byte);
-        self.write_byte(addr + 1, h as Byte);
+        self.write_byte(addr.wrapping_add(1), h as Byte);
     }
 
     ///Function to read a word
     pub fn read_word(&self, addr: Word) -> Word {
         let l = self.read_byte(addr) as Word;
-        let h = self.read_byte(addr + 1) as Word;
+        let h = self.read_byte(addr.wrapping_add(1)) as Word;
         h << 8 | l
     }
 
@@ -128,7 +126,7 @@ impl Memory {
     ///
     /// Be careful as there are no bounds on providing the wrong mem index
     pub fn read_byte_forced(&self, addr: Word) -> Byte {
-        self.mem[addr as usize]
+        self.read_byte_internal(addr)
     }
 
     /// Reads TMC memory location to get current clock frequency
@@ -314,10 +312,50 @@ impl Memory {
 
     /// Loads the given ROM bytes into memory
     pub fn load_rom_data(&mut self, data: &[u8]) {
-        // puts a lower bound on load size equal to the mem size
-        let len = data.len().min(MEM_SIZE);
-        self.mem[..len].copy_from_slice(&data[..len]);
+        self.mem.fill(0); // clear VRAM, WRAM, OAM, I/O mirrors
+        self.rom.clear();
+        self.rom.extend_from_slice(data);
+        self.external_ram = [[0; 0x2000]; 4];
+
+        self.rom_banks = CurrentRomBank::Bank(1);
+        self.ram_banks = CurrentRamBank::Bank0;
+        self.rom_bank_enable = true;
+        self.ram_write_enable = false;
         self.refresh_rom_banking_type();
+    }
+
+    fn read_byte_internal(&self, addr: Word) -> Byte {
+        if addr < 0x4000 {
+            return self.read_rom_byte(addr as usize);
+        }
+
+        if (0x4000..=0x7FFF).contains(&addr) {
+            let relative = (addr - 0x4000) as usize;
+            let offset = (self.rom_banks.value() as usize) * 0x4000;
+            return self.read_rom_byte(offset + relative);
+        }
+
+        if (0xA000..=0xBFFF).contains(&addr) {
+            let offset = (addr - 0xA000) as usize;
+            let bank = self.ram_banks as usize;
+            return self.external_ram[bank][offset];
+        }
+
+        self.mem[addr as usize]
+    }
+
+    fn read_rom_byte(&self, index: usize) -> Byte {
+        if self.rom.is_empty() {
+            if index < self.mem.len() {
+                self.mem[index]
+            } else {
+                0
+            }
+        } else {
+            let len = self.rom.len();
+            let masked = index % len;
+            self.rom[masked]
+        }
     }
 
     /// Enables an interrupt for the CPU to handle
@@ -415,6 +453,24 @@ mod test {
         mem.write_byte(0xE000, 0x9);
         assert_eq!(0x9, mem.read_byte(0xE000));
         assert_eq!(0x9, mem.read_byte(0xE000 - 0x2000));
+    }
+
+    #[test]
+    #[timeout(10)]
+    fn test_read_word_wraps_at_end() {
+        let mut mem: Memory = Memory::new();
+        mem.write_byte_forced(0xFFFF, 0xAA);
+        mem.write_byte_forced(0x0000, 0xBB);
+        assert_eq!(mem.read_word(0xFFFF), 0xBBAA);
+    }
+
+    #[test]
+    #[timeout(10)]
+    fn test_write_word_high_region() {
+        let mut mem: Memory = Memory::new();
+        mem.write_word(0xFFFE, 0xBEEF);
+        assert_eq!(mem.read_byte(0xFFFE), 0xEF);
+        assert_eq!(mem.read_byte(0xFFFF), 0xBE);
     }
 
     #[test]
@@ -672,7 +728,7 @@ mod test {
             assert_eq!(mem.read_byte(i as Word), *b);
         }
         assert_eq!(mem.rom_banking_type, RomBankingType::MBC1);
-        assert_eq!(mem.read_byte(data.len() as Word), 0);
+        assert_eq!(mem.read_byte(data.len() as Word), data[0]);
     }
 
     #[test]

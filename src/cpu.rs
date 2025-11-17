@@ -67,7 +67,7 @@ impl CPU {
     #[inline(always)]
     fn addr_d(&mut self, d: Word, ext: bool) -> Word {
         if ext {
-            let addr = (self.registers.r16sp(2) + d) & 0xFFFF;
+            let addr = self.registers.r16sp(2).wrapping_add(d);
             self.registers.set_wz(addr);
             addr
         } else {
@@ -97,7 +97,8 @@ impl CPU {
         let pc = self.registers.val_pc();
         let mem = self.device_memory.lock().unwrap();
 
-        let imm = mem.read_byte(pc) as Word | ((mem.read_byte(pc + 1) as Word) << 8) as Word;
+        let imm =
+            mem.read_byte(pc) as Word | ((mem.read_byte(pc.wrapping_add(1)) as Word) << 8) as Word;
         self.registers.inc_pc(2);
         imm
     }
@@ -935,7 +936,7 @@ impl CPU {
     #[inline(always)]
     pub fn add8(&mut self, add: Byte) {
         let acc = self.registers.val_a();
-        let res = acc + add;
+        let res = acc.wrapping_add(add);
         self.registers.set_f(flags_add(acc, add, res));
         self.registers.set_a(res);
     }
@@ -943,7 +944,8 @@ impl CPU {
     #[inline(always)]
     pub fn adc8(&mut self, add: Byte) {
         let acc = self.registers.val_a();
-        let res = acc + add + (self.registers.val_f() & CF);
+        let carry = self.registers.val_f() & CF;
+        let res = acc.wrapping_add(add).wrapping_add(carry);
         self.registers.set_f(flags_add(acc, add, res));
         self.registers.set_a(res);
     }
@@ -951,7 +953,7 @@ impl CPU {
     #[inline(always)]
     pub fn sub8(&mut self, sub: Byte) {
         let acc = self.registers.val_a();
-        let res = acc - sub;
+        let res = acc.wrapping_sub(sub);
         self.registers.set_f(flags_sub(acc, sub, res));
         self.registers.set_a(res);
     }
@@ -1013,11 +1015,11 @@ impl CPU {
 
     #[inline(always)]
     pub fn add16(&mut self, acc: Word, add: Word) -> Word {
-        self.registers.set_wz(acc + 1);
-        let res = acc + add;
+        self.registers.set_wz(acc.wrapping_add(1));
+        let res = acc.wrapping_add(add);
         let f = (self.registers.val_f() & (SF | ZF | VF))
             | (((acc ^ res ^ add) >> 8) as Byte & HF)
-            | (((res as u32) >> 16) as Byte & CF)
+            | ((((acc as u32) + (add as u32)) >> 16) as Byte & CF)
             | ((res >> 8) as Byte & (YF | XF));
         self.registers.set_f(f);
         res & 0xFFFF
@@ -1025,7 +1027,7 @@ impl CPU {
 
     #[cfg_attr(rustfmt, rustfmt_skip)]
     pub fn inc8(&mut self, val: Byte) -> Byte {
-        let res = (val + 1) & 0xFF;
+        let res = val.wrapping_add(1);
         let f = (if res == 0 {ZF} else {res & SF}) |
             (res & (XF | YF)) | ((res ^ val) & HF) |
             (if res == 0x80 {VF} else {0}) |
@@ -1036,7 +1038,7 @@ impl CPU {
 
     #[cfg_attr(rustfmt, rustfmt_skip)]
     pub fn dec8(&mut self, val: Byte) -> Byte {
-        let res = (val - 1) & 0xFF;
+        let res = val.wrapping_sub(1);
         let f = NF | (if res == 0 {ZF} else {res & SF}) |
             (res & (XF | YF)) | ((res ^ val) & HF) |
             (if res == 0x7F {VF} else {0}) |
@@ -1876,6 +1878,32 @@ mod test {
         timer.update_timers(16);
         let m = mem.lock().unwrap();
         assert_eq!(m.read_byte(TIMA), 0);
+    }
+
+    #[test]
+    #[timeout(100)]
+    fn test_inc_dec_wraparound() {
+        let mem = Arc::new(Mutex::new(Memory::new()));
+        let mut cpu = CPU::new(mem);
+
+        assert_eq!(cpu.inc8(0xFF), 0x00);
+        assert_eq!(cpu.dec8(0x00), 0xFF);
+    }
+
+    #[test]
+    #[timeout(100)]
+    fn test_add_adc_wraparound() {
+        let mem = Arc::new(Mutex::new(Memory::new()));
+        let mut cpu = CPU::new(mem);
+
+        cpu.registers.set_a(0xFF);
+        cpu.add8(0x02);
+        assert_eq!(cpu.registers.val_a(), 0x01);
+
+        cpu.registers.set_a(0xFF);
+        cpu.registers.set_f(CF);
+        cpu.adc8(0x01);
+        assert_eq!(cpu.registers.val_a(), 0x01);
     }
     #[test]
     #[timeout(100)]

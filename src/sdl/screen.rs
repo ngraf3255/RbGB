@@ -4,7 +4,10 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::{types::{SCREEN_HEIGHT, SCREEN_WIDTH}, Emulator};
+use crate::{
+    Emulator,
+    types::{SCREEN_HEIGHT, SCREEN_WIDTH},
+};
 use sdl2::{
     event::Event,
     keyboard::Keycode,
