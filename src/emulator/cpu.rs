@@ -2070,27 +2070,27 @@ impl CPU {
                 2
             }
             0xC0 => {
-                self.reg.b |= (1 << 0);
+                self.reg.b |= 1 << 0;
                 2
             }
             0xC1 => {
-                self.reg.c |= (1 << 0);
+                self.reg.c |= 1 << 0;
                 2
             }
             0xC2 => {
-                self.reg.d |= (1 << 0);
+                self.reg.d |= 1 << 0;
                 2
             }
             0xC3 => {
-                self.reg.e |= (1 << 0);
+                self.reg.e |= 1 << 0;
                 2
             }
             0xC4 => {
-                self.reg.h |= (1 << 0);
+                self.reg.h |= 1 << 0;
                 2
             }
             0xC5 => {
-                self.reg.l |= (1 << 0);
+                self.reg.l |= 1 << 0;
                 2
             }
             0xC6 => {
@@ -2100,31 +2100,31 @@ impl CPU {
                 4
             }
             0xC7 => {
-                self.reg.a |= (1 << 0);
+                self.reg.a |= 1 << 0;
                 2
             }
             0xC8 => {
-                self.reg.b |= (1 << 1);
+                self.reg.b |= 1 << 1;
                 2
             }
             0xC9 => {
-                self.reg.c |= (1 << 1);
+                self.reg.c |= 1 << 1;
                 2
             }
             0xCA => {
-                self.reg.d |= (1 << 1);
+                self.reg.d |= 1 << 1;
                 2
             }
             0xCB => {
-                self.reg.e |= (1 << 1);
+                self.reg.e |= 1 << 1;
                 2
             }
             0xCC => {
-                self.reg.h |= (1 << 1);
+                self.reg.h |= 1 << 1;
                 2
             }
             0xCD => {
-                self.reg.l |= (1 << 1);
+                self.reg.l |= 1 << 1;
                 2
             }
             0xCE => {
@@ -2134,31 +2134,31 @@ impl CPU {
                 4
             }
             0xCF => {
-                self.reg.a |= (1 << 1);
+                self.reg.a |= 1 << 1;
                 2
             }
             0xD0 => {
-                self.reg.b |= (1 << 2);
+                self.reg.b |= 1 << 2;
                 2
             }
             0xD1 => {
-                self.reg.c |= (1 << 2);
+                self.reg.c |= 1 << 2;
                 2
             }
             0xD2 => {
-                self.reg.d |= (1 << 2);
+                self.reg.d |= 1 << 2;
                 2
             }
             0xD3 => {
-                self.reg.e |= (1 << 2);
+                self.reg.e |= 1 << 2;
                 2
             }
             0xD4 => {
-                self.reg.h |= (1 << 2);
+                self.reg.h |= 1 << 2;
                 2
             }
             0xD5 => {
-                self.reg.l |= (1 << 2);
+                self.reg.l |= 1 << 2;
                 2
             }
             0xD6 => {
@@ -2168,31 +2168,31 @@ impl CPU {
                 4
             }
             0xD7 => {
-                self.reg.a |= (1 << 2);
+                self.reg.a |= 1 << 2;
                 2
             }
             0xD8 => {
-                self.reg.b |= (1 << 3);
+                self.reg.b |= 1 << 3;
                 2
             }
             0xD9 => {
-                self.reg.c |= (1 << 3);
+                self.reg.c |= 1 << 3;
                 2
             }
             0xDA => {
-                self.reg.d |= (1 << 3);
+                self.reg.d |= 1 << 3;
                 2
             }
             0xDB => {
-                self.reg.e |= (1 << 3);
+                self.reg.e |= 1 << 3;
                 2
             }
             0xDC => {
-                self.reg.h |= (1 << 3);
+                self.reg.h |= 1 << 3;
                 2
             }
             0xDD => {
-                self.reg.l |= (1 << 3);
+                self.reg.l |= 1 << 3;
                 2
             }
             0xDE => {
@@ -2202,31 +2202,31 @@ impl CPU {
                 4
             }
             0xDF => {
-                self.reg.a |= (1 << 3);
+                self.reg.a |= 1 << 3;
                 2
             }
             0xE0 => {
-                self.reg.b |= (1 << 4);
+                self.reg.b |= 1 << 4;
                 2
             }
             0xE1 => {
-                self.reg.c |= (1 << 4);
+                self.reg.c |= 1 << 4;
                 2
             }
             0xE2 => {
-                self.reg.d |= (1 << 4);
+                self.reg.d |= 1 << 4;
                 2
             }
             0xE3 => {
-                self.reg.e |= (1 << 4);
+                self.reg.e |= 1 << 4;
                 2
             }
             0xE4 => {
-                self.reg.h |= (1 << 4);
+                self.reg.h |= 1 << 4;
                 2
             }
             0xE5 => {
-                self.reg.l |= (1 << 4);
+                self.reg.l |= 1 << 4;
                 2
             }
             0xE6 => {
@@ -2236,31 +2236,31 @@ impl CPU {
                 4
             }
             0xE7 => {
-                self.reg.a |= (1 << 4);
+                self.reg.a |= 1 << 4;
                 2
             }
             0xE8 => {
-                self.reg.b |= (1 << 5);
+                self.reg.b |= 1 << 5;
                 2
             }
             0xE9 => {
-                self.reg.c |= (1 << 5);
+                self.reg.c |= 1 << 5;
                 2
             }
             0xEA => {
-                self.reg.d |= (1 << 5);
+                self.reg.d |= 1 << 5;
                 2
             }
             0xEB => {
-                self.reg.e |= (1 << 5);
+                self.reg.e |= 1 << 5;
                 2
             }
             0xEC => {
-                self.reg.h |= (1 << 5);
+                self.reg.h |= 1 << 5;
                 2
             }
             0xED => {
-                self.reg.l |= (1 << 5);
+                self.reg.l |= 1 << 5;
                 2
             }
             0xEE => {
@@ -2270,31 +2270,31 @@ impl CPU {
                 4
             }
             0xEF => {
-                self.reg.a |= (1 << 5);
+                self.reg.a |= 1 << 5;
                 2
             }
             0xF0 => {
-                self.reg.b |= (1 << 6);
+                self.reg.b |= 1 << 6;
                 2
             }
             0xF1 => {
-                self.reg.c |= (1 << 6);
+                self.reg.c |= 1 << 6;
                 2
             }
             0xF2 => {
-                self.reg.d |= (1 << 6);
+                self.reg.d |= 1 << 6;
                 2
             }
             0xF3 => {
-                self.reg.e |= (1 << 6);
+                self.reg.e |= 1 << 6;
                 2
             }
             0xF4 => {
-                self.reg.h |= (1 << 6);
+                self.reg.h |= 1 << 6;
                 2
             }
             0xF5 => {
-                self.reg.l |= (1 << 6);
+                self.reg.l |= 1 << 6;
                 2
             }
             0xF6 => {
@@ -2304,31 +2304,31 @@ impl CPU {
                 4
             }
             0xF7 => {
-                self.reg.a |= (1 << 6);
+                self.reg.a |= 1 << 6;
                 2
             }
             0xF8 => {
-                self.reg.b |= (1 << 7);
+                self.reg.b |= 1 << 7;
                 2
             }
             0xF9 => {
-                self.reg.c |= (1 << 7);
+                self.reg.c |= 1 << 7;
                 2
             }
             0xFA => {
-                self.reg.d |= (1 << 7);
+                self.reg.d |= 1 << 7;
                 2
             }
             0xFB => {
-                self.reg.e |= (1 << 7);
+                self.reg.e |= 1 << 7;
                 2
             }
             0xFC => {
-                self.reg.h |= (1 << 7);
+                self.reg.h |= 1 << 7;
                 2
             }
             0xFD => {
-                self.reg.l |= (1 << 7);
+                self.reg.l |= 1 << 7;
                 2
             }
             0xFE => {
