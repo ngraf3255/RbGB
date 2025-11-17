@@ -5,7 +5,7 @@ use std::{
 };
 
 use crate::{
-    Emulator,
+    emulator::Emulator,
     types::{SCREEN_HEIGHT, SCREEN_WIDTH},
 };
 use sdl2::{

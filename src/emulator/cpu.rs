@@ -1,5 +1,5 @@
-use crate::mem::SharedMemory;
-use crate::registers::{
+use crate::emulator::mem::SharedMemory;
+use crate::emulator::registers::{
     CpuFlag::{C, H, N, Z},
     Registers,
 };

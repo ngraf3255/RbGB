@@ -2,7 +2,7 @@
 #[allow(unused_imports)]
 use debug_print::debug_println;
 
-use crate::mem::*;
+use crate::emulator::mem::*;
 use crate::types::*;
 
 /// Basic implementation and methods for the LCD Screen

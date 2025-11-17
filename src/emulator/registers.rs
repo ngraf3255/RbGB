@@ -102,4 +102,3 @@ impl Registers {
         (self.f & flag as Byte) != 0
     }
 }
-
