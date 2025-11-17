@@ -2,15 +2,12 @@
 
 extern crate sdl2;
 
+mod emulator;
+mod sdl;
 mod types;
 
+use emulator::Emulator;
 use sdl::SdlApp;
-
-mod emulator;
-
-use crate::emulator::Emulator;
-
-mod sdl;
 
 ///Main entry point to gameboy simulation
 fn main() -> Result<(), String> {
