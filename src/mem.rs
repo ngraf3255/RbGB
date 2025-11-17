@@ -72,8 +72,7 @@ impl Memory {
         else if (0xE000..0xFE00).contains(&addr) {
             self.mem[addr as usize] = value;
             self.write_byte(addr - 0x2000, value);
-        }
-        else if addr == 0xFF80 {
+        } else if addr == 0xFF80 {
             return;
         }
         // restricted memory area
