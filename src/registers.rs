@@ -117,8 +117,8 @@ impl Registers {
             3 => self.reg_de.low_value(),  // e
             4 => self.reg_hl.high_value(), // h
             5 => self.reg_hl.low_value(),  // l
-            6 => self.reg_af.high_value(), // f
-            7 => self.reg_af.low_value(),  // a
+            6 => self.reg_af.low_value(),  // f
+            7 => self.reg_af.high_value(), // a
             _ => 0,
         }
     }
@@ -131,8 +131,8 @@ impl Registers {
             3 => self.set_e(val),
             4 => self.set_h(val),
             5 => self.set_l(val),
-            6 => self.set_a(val),
-            7 => self.set_f(val),
+            6 => self.set_f(val),
+            7 => self.set_a(val),
             _ => panic!("Invalid index found: u8 set"),
         };
     }
@@ -265,12 +265,12 @@ impl Registers {
 
     /// Sets the contents of the l register
     pub fn set_l(&mut self, val: Byte) {
-        self.reg_de.bitspace.lo = val;
+        self.reg_hl.bitspace.lo = val;
     }
 
     /// Gets the contents of the l register
     pub fn val_l(&self) -> Byte {
-        unsafe { self.reg_de.bitspace.lo }
+        unsafe { self.reg_hl.bitspace.lo }
     }
 
     /// Sets the contents of the w register
@@ -315,7 +315,7 @@ impl Registers {
 
     /// Gets the contents of the hl register
     pub fn val_hl(&mut self) -> Word {
-        unsafe { self.reg_wz.reg }
+        unsafe { self.reg_hl.reg }
     }
 
     /// Sets the contents of the hl register

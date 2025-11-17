@@ -135,119 +135,89 @@ impl Screen {
         debug_println!("Rendering tile, control: {:b}", control);
         let mem = self.device_memory.lock().unwrap();
 
-        let tile_data;
-        let background_memory: Word;
         let mut unsigned = true;
+        let tile_data = if control & (1 << 4) != 0 {
+            0x8000
+        } else {
+            unsigned = false;
+            0x8800
+        };
 
         // where to draw the visual area and the window
         let scroll_y = mem.read_byte(0xFF42);
         let scroll_x = mem.read_byte(0xFF43);
         let window_y = mem.read_byte(0xFF4A);
         let window_x = mem.read_byte(0xFF4B).wrapping_sub(7);
+        let current_line = mem.read_byte(CURRENT_SCANLINE);
+        let using_window =
+            (control & (1 << 5) != 0) && window_y <= current_line;
 
-        let using_window;
-
-        debug_println!("Control Status {}", control & (1 << 5) != 0);
-        // is the window enabled?
-        if control & (1 << 4) != 0 {
-            debug_println!("Window enabled");
-            using_window = window_y <= mem.read_byte(CURRENT_SCANLINE);
-
-            // which tile data?
-            if control & (1 << 4) != 0 {
-                tile_data = 0x8000;
+        // determine which tile map to use
+        let background_memory: Word = if using_window {
+            if control & (1 << 6) != 0 {
+                0x9C00
             } else {
-                tile_data = 0x8800;
-                unsigned = false;
+                0x9800
+            }
+        } else if control & (1 << 3) != 0 {
+            0x9C00
+        } else {
+            0x9800
+        };
+
+        let y_pos = if using_window {
+            current_line.wrapping_sub(window_y)
+        } else {
+            scroll_y.wrapping_add(current_line)
+        };
+
+        let tile_row: Word = ((y_pos / 8) as Word) * 32;
+
+        for pixel in 0..SCREEN_WIDTH as Byte {
+            let mut x_pos = pixel.wrapping_add(scroll_x);
+            if using_window && pixel >= window_x {
+                x_pos = pixel.wrapping_sub(window_x);
             }
 
-            // which background mem?
-            if !using_window {
-                if control & (1 << 3) != 0 {
-                    background_memory = 0x9C00;
-                } else {
-                    background_memory = 0x9800;
-                }
-            } else if control & (1 << 6) != 0 {
-                background_memory = 0x9C00;
+            let tile_column = (x_pos / 8) as Word;
+            let tile_num =
+                mem.read_byte(background_memory + tile_row + tile_column);
+
+            let mut tile_location: Word = tile_data;
+            if unsigned {
+                tile_location += tile_num as Word * 16;
             } else {
-                background_memory = 0x9800;
+                tile_location += (tile_num as Word + 128) * 16;
             }
 
-            let y_pos = if !using_window {
-                scroll_y + mem.read_byte(CURRENT_SCANLINE)
-            } else {
-                mem.read_byte(CURRENT_SCANLINE) - window_y
+            let line = (y_pos % 8) * 2;
+            let data1 = mem.read_byte(tile_location + line as Word);
+            let data2 = mem.read_byte(tile_location + line as Word + 1);
+
+            let color_bit = 7 - (x_pos % 8);
+            let color_num =
+                (((data2 >> color_bit) & 1) << 1) | ((data1 >> color_bit) & 1);
+
+            let color: Color = mem.get_color(color_num, 0xFF47);
+            let (red, green, blue) = match color {
+                Color::White => (255, 255, 255),
+                Color::LightGrey => (0xCC, 0xCC, 0xCC),
+                Color::DarkGrey => (0x77, 0x77, 0x77),
+                Color::Black => (0, 0, 0),
             };
 
-            let tile_row: u32 = (y_pos / 8) as u32 * 32;
-
-            for pixel in 0..SCREEN_WIDTH as Byte {
-                let mut x_pos = pixel + scroll_x;
-                if using_window && pixel >= window_x {
-                    x_pos = pixel - window_x;
-                }
-
-                let tile_column = x_pos / 8;
-                let tile_num = mem.read_byte(
-                    (background_memory + tile_row as Word + tile_column as Word) as Word,
-                );
-
-                let mut tile_location: Word = tile_data;
-
-                if unsigned {
-                    tile_location += tile_num as Word * 16;
-                } else {
-                    tile_location += (tile_num as Word + 128) * 16;
-                }
-
-                let line = (y_pos % 8) * 2;
-                let data1 = mem.read_byte(tile_location + line as Word);
-                let data2 = mem.read_byte(tile_location + line as Word + 1);
-
-                let color_bit: i32 = -((x_pos as u32 % 8) as i32 - 7);
-                let color_num = (((data2 & (1 << color_bit)) >> color_bit) << 1)
-                    | ((data1 & (1 << color_bit)) >> color_bit);
-
-                let color: Color = mem.get_color(color_num, 0xFF47);
-                let red;
-                let blue;
-                let green;
-
-                match color {
-                    Color::White => {
-                        red = 255;
-                        green = 255;
-                        blue = 255;
-                    }
-                    Color::LightGrey => {
-                        red = 0xCC;
-                        green = 0xCC;
-                        blue = 0xCC;
-                    }
-                    Color::DarkGrey => {
-                        red = 0x77;
-                        green = 0x77;
-                        blue = 0x77;
-                    }
-                    Color::Black => {
-                        red = 0;
-                        green = 0;
-                        blue = 0;
-                    }
-                }
-
-                let line = mem.read_byte(CURRENT_SCANLINE);
-                if (line >= SCREEN_HEIGHT as u8) || (pixel >= SCREEN_WIDTH as u8) {
-                    panic!("Invalid print location"); // crash program
-                }
-
-                let idx = (line as usize * SCREEN_WIDTH as usize + pixel as usize) * 3;
-                debug_println!("Writing idx: {idx}");
-                self.buffer[idx] = red;
-                self.buffer[idx + 1] = green;
-                self.buffer[idx + 2] = blue;
+            if current_line as usize >= SCREEN_HEIGHT as usize
+                || pixel as usize >= SCREEN_WIDTH as usize
+            {
+                continue;
             }
+
+            let idx =
+                (current_line as usize * SCREEN_WIDTH as usize + pixel as usize) * 3;
+            debug_println!("Writing idx: {idx}");
+            self.buffer[idx] = red;
+            self.buffer[idx + 1] = green;
+            self.buffer[idx + 2] = blue;
         }
     }
 

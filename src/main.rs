@@ -4,7 +4,7 @@ extern crate sdl2;
 
 use std::{
     sync::{Arc, Mutex},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use cpu::CPU;
@@ -44,8 +44,8 @@ pub struct Emulator {
 
 impl Emulator {
     /// Calls the needed functions once a frame
-    ///
     const MAXCYCLES: u32 = 69905;
+    const FRAME_DURATION: Duration = Duration::from_nanos(16_741_000);
 
     pub fn new() -> Self {
         let mem = Arc::new(Mutex::new(Memory::new()));
@@ -62,6 +62,7 @@ impl Emulator {
         if self.paused {
             return;
         }
+        let frame_start = Instant::now();
         // debug_println!("Main Loop");
         let mut num_cycles: u32 = 0;
         while num_cycles < Self::MAXCYCLES {
@@ -72,7 +73,9 @@ impl Emulator {
             self.screen.update_screen(cycles as i32);
             self.cpu.handle_interrupts();
         }
-        std::thread::sleep(Duration::from_millis(100));
+        if let Some(remaining) = Self::FRAME_DURATION.checked_sub(frame_start.elapsed()) {
+            std::thread::sleep(remaining);
+        }
     }
 
     pub fn toggle_pause(&mut self) {

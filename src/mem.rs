@@ -12,6 +12,7 @@ pub type SharedMemory = Arc<Mutex<Memory>>;
 
 pub struct Memory {
     mem: Ram,
+    external_ram: [[Byte; 0x2000]; 4],
     rom_banking_type: RomBankingType,
     rom_banks: CurrentRomBank,
     ram_banks: CurrentRamBank,
@@ -25,6 +26,7 @@ impl Memory {
     pub fn new() -> Self {
         Memory {
             mem: [0; MEM_SIZE],
+            external_ram: [[0; 0x2000]; 4],
             rom_banking_type: RomBankingType::None,
             rom_banks: CurrentRomBank::Bank(1),
             ram_banks: CurrentRamBank::Bank0,
@@ -45,9 +47,9 @@ impl Memory {
             self.mem[addr + ((self.rom_banks.value() as usize) * 0x4000)]
         } else if (0xA000..=0xBFFF).contains(&addr) {
             // RAM bank storage and indexing
-            let addr = addr as usize;
-
-            self.mem[addr + (self.ram_banks as usize) * 0x2000]
+            let offset = (addr - 0xA000) as usize;
+            let bank = self.ram_banks as usize;
+            self.external_ram[bank][offset]
         } else {
             // debug_println!("VALID READ");
             // Else return memory
@@ -64,16 +66,15 @@ impl Memory {
         //inserts value into the ram banks if enabled
         else if (0xA000..0xC000).contains(&addr) {
             if self.ram_write_enable {
-                let addr = addr as usize;
-                self.mem[addr + (self.ram_banks as usize * 0x2000)] = value;
+                let offset = (addr - 0xA000) as usize;
+                let bank = self.ram_banks as usize;
+                self.external_ram[bank][offset] = value;
             }
         }
         // echo ram writes to two locations
         else if (0xE000..0xFE00).contains(&addr) {
             self.mem[addr as usize] = value;
             self.write_byte(addr - 0x2000, value);
-        } else if addr == 0xFF80 {
-            return;
         }
         // restricted memory area
         else if (0xFEA0..0xFEFF).contains(&addr) {

@@ -1,4 +1,8 @@
-use std::{thread, time::{Duration, Instant}};
+use std::{
+    io::{self, Write},
+    thread,
+    time::{Duration, Instant},
+};
 
 use crate::{types::{SCREEN_HEIGHT, SCREEN_WIDTH}, Emulator};
 use sdl2::{
@@ -89,13 +93,21 @@ impl SdlApp {
                 keycode: Some(Keycode::L),
                 ..
             } => {
-                println!("Enter path to ROM:");
-                let path = "roms/kirby.gb";
-
-                if let Err(e) = emulator.load_rom(path.trim()) {
-                    println!("Failed to load ROM: {e}");
-                } else {
-                    println!("ROM loaded");
+                print!("Enter path to ROM: ");
+                if io::stdout().flush().is_ok() {
+                    let mut path = String::new();
+                    if io::stdin().read_line(&mut path).is_err() {
+                        println!("Failed to read ROM path from stdin");
+                    } else {
+                        let trimmed = path.trim();
+                        if trimmed.is_empty() {
+                            println!("No ROM path entered");
+                        } else if let Err(e) = emulator.load_rom(trimmed) {
+                            println!("Failed to load ROM: {e}");
+                        } else {
+                            println!("ROM loaded");
+                        }
+                    }
                 }
                 true
             }
