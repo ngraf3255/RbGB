@@ -7,7 +7,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use cpu_gb::CPU;
+use cpu::CPU;
 use debug_print::debug_println;
 use mem::{Memory, SharedMemory};
 use types::{SCREEN_HEIGHT, SCREEN_WIDTH};
@@ -15,9 +15,7 @@ use types::{SCREEN_HEIGHT, SCREEN_WIDTH};
 use crate::types::{CURRENT_SCANLINE, LCD_CONTROL};
 use sdl::SdlApp;
 
-mod bus;
-mod cpu_gb;
-mod ctc;
+mod cpu;
 mod graphics;
 mod mem;
 mod registers;

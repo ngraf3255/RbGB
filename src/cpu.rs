@@ -1,1626 +1,2594 @@
-#![allow(dead_code)]
-#![allow(unused_imports)]
-use debug_print::debug_println;
+use crate::mem::SharedMemory;
+use crate::registers::{
+    CpuFlag::{C, H, N, Z},
+    Registers,
+};
+use crate::types::{DIVIDER_REGISTER, IE, IF, TIMA, TMA, TMC};
 
-use crate::mem::*;
-use crate::registers;
-use crate::types::*;
-use std::sync::{Arc, Mutex};
-
-#[allow(clippy::upper_case_acronyms)]
 pub struct CPU {
-    pub registers: registers::Registers,
-    device_memory: SharedMemory, // 64KB address space
+    reg: Registers,
+    mmu: MemoryAdapter,
     pub timers: Timer,
     halted: bool,
-    ime: bool, // Interrupt Master Enable
-    cycles: u64,
+    /// Accurate emulation means emulating that when interrupts are set, IME is off, and HALT is
+    /// called, the PC fails to increment on the next byte instruction.
+    /// https://github.com/geaz/emu-gameboy/blob/master/docs/The%20Cycle-Accurate%20Game%20Boy%20Docs.pdf
+    halt_bug: bool,
+    ime: bool,
+    setdi: u32,
+    setei: u32,
 }
 
 impl CPU {
-    pub fn new(mem: SharedMemory) -> Self {
-        // Creates new mem object on the heap
-
-        let cpu = CPU {
-            registers: registers::Registers::new(),
-            device_memory: Arc::clone(&mem),
-            timers: Timer::new(Arc::clone(&mem)),
+    pub fn new(mem: SharedMemory) -> CPU {
+        let registers = Registers::new();
+        let timers = Timer::new(mem.clone());
+        CPU {
+            reg: registers,
+            mmu: MemoryAdapter::new(mem),
+            timers,
             halted: false,
+            halt_bug: false,
             ime: true,
-            cycles: 0,
-        };
-
-        cpu.device_memory.lock().unwrap().ram_startup();
-
-        cpu
+            setdi: 0,
+            setei: 0,
+        }
     }
 
     pub fn reset(&mut self) {
-        self.registers = registers::Registers::new();
+        self.reg.reset();
         self.halted = false;
+        self.halt_bug = false;
         self.ime = true;
-        self.cycles = 0;
-
-        let mut mem = self.device_memory.lock().unwrap();
-        mem.ram_startup();
+        self.setdi = 0;
+        self.setei = 0;
     }
 
-    pub fn step(&mut self) {
-        // Skeleton: Fetch, Decode, Execute cycle
-        // let pc = self.registers.pc;
-        // let opcode = self.memory[pc as usize];
-        // instructions::execute(self, opcode);
+    pub fn execute_next_opcode(&mut self, _extension: bool) -> i64 {
+        (self.docycle() * 4) as i64
     }
 
-    /// load d (as in IX+d) from memory and advance PC
-    #[inline(always)]
-    fn d(&mut self) -> Byte {
-        let mem = self.device_memory.lock().unwrap();
-        let pc = self.registers.reg_pc.value();
-        let d = mem.read_byte(pc);
-        self.registers.inc_pc(1);
-        d
-    }
-
-    /// load effective address HL, IX+d or IY+d with existing d
-    /// this is for DD CB and FD DB instructions
-    #[inline(always)]
-    fn addr_d(&mut self, d: Word, ext: bool) -> Word {
-        if ext {
-            let addr = self.registers.r16sp(2).wrapping_add(d);
-            self.registers.set_wz(addr);
-            addr
-        } else {
-            self.registers.val_hl()
-        }
-    }
-
-    #[inline(always)]
-    fn check_condition(&self, y: Byte) -> bool {
-        let f = self.registers.val_f();
-        match y {
-            0 => 0 == f & ZF, // JR NZ
-            1 => 0 != f & ZF, // JR Z
-            2 => 0 == f & CF, // JR NC
-            3 => 0 != f & CF, // JC C
-            4 => 0 == f & PF, // JR PO
-            5 => 0 != f & PF, // JR PE
-            6 => 0 == f & SF, // JR P
-            7 => 0 != f & SF, // JR M
-            _ => false,
-        }
-    }
-
-    /// load 16-bit immediate operand and bump PC
-    #[inline(always)]
-    fn imm16(&mut self) -> Word {
-        let pc = self.registers.val_pc();
-        let mem = self.device_memory.lock().unwrap();
-
-        let imm =
-            mem.read_byte(pc) as Word | ((mem.read_byte(pc.wrapping_add(1)) as Word) << 8) as Word;
-        self.registers.inc_pc(2);
-        imm
-    }
-
-    // Placeholder for interrupt handling
     pub fn handle_interrupts(&mut self) {
-        // Checks interrupt master enable
-        if self.ime {
-            // Aquire lock on memory
-            let mem = self.device_memory.lock().unwrap();
-
-            let request = mem.read_byte(IF);
-            let enabled = mem.read_byte(IE);
-            drop(mem); // Memory lock is dropped after all reads are done
-
-            if request != 0 {
-                // debug_println!("Interrupt Requested");
-                for i in 0..5 {
-                    let req_bit = (request >> i) & 1 != 0;
-                    let ena_bit = (enabled >> i) & 1 != 0;
-                    if req_bit && ena_bit {
-                        self.service_interrupt(i);
-                    }
-                }
-            }
-        }
+        self.handleinterrupt();
     }
 
-    fn service_interrupt(&mut self, interrupt: Byte) {
-        // New lock aquired on memory
-        let mut mem = self.device_memory.lock().unwrap();
-
-        // debug_println!("Servicing interrupt {}", interrupt);
-        self.ime = false; // Disables new interrupts
-        let mut request = mem.read_byte(IF);
-        // Clear the requested interrupt flag. The previous implementation used
-        // `2 ^ interrupt` which performs a bitwise XOR and resulted in the
-        // wrong bit being cleared.
-        request &= !(1 << interrupt); // Clears interrupt
-        mem.write_byte(IF, request);
-
-        drop(mem); // Drops memory since we are done writing
-
-        // Save current execution location on stack
-        // debug_println!("Pushing PC on stack: {:#X}", self.registers.reg_pc.value());
-        self.push_stack(self.registers.reg_pc.value());
-
-        // Set the program counter to the address of the ISRs
-        // debug_println!("Matching interrupt {interrupt}");
-        match interrupt {
-            0 => self.registers.reg_pc.set(0x40), // Vblank
-            1 => self.registers.reg_pc.set(0x48), // STAT
-            2 => self.registers.reg_pc.set(0x50), // Timer Interrupt
-            3 => self.registers.reg_pc.set(0x58), // Serial Interrupt
-            4 => self.registers.reg_pc.set(0x60), // Joypad
-            _ => self.registers.reg_pc.set(0x40), // Default
-        }
+    pub fn do_cycle(&mut self) -> u32 {
+        self.docycle() * 4
     }
 
-    /// Pushes the provided register onto the stack
-    ///
-    /// Careful that this is called after all registers are initialized
-    fn push_stack(&mut self, reg: Word) {
-        let mut mem = self.device_memory.lock().unwrap();
-        // Decriments the stack pointer by one byte
-        let reg = registers::Register::new(reg);
-        self.registers.reg_sp.decriment();
-        mem.write_byte(self.registers.reg_sp.value(), reg.high_value());
+    fn docycle(&mut self) -> u32 {
+        self.updateime();
+        match self.handleinterrupt() {
+            0 => {}
+            n => return n,
+        };
 
-        self.registers.reg_sp.decriment();
-        mem.write_byte(self.registers.reg_sp.value(), reg.low_value());
-        drop(mem);
-    }
-
-    /// Pops from the top of the stack
-    fn pop_stack(&mut self) -> Word {
-        let mem = self.device_memory.lock().unwrap();
-
-        let mut return_word: Word = (mem.read_byte(self.registers.reg_sp.value() + 1) as Word) << 8;
-        return_word |= mem.read_byte(self.registers.reg_sp.value()) as Word;
-
-        self.registers.reg_sp.incriment();
-        self.registers.reg_sp.incriment();
-
-        return_word
-    }
-
-    pub fn execute_next_opcode(&mut self, extention: bool) -> i64 {
-        let (cycle, extention_cycle) = if extention { (4, 8) } else { (0, 0) };
-
-        let operation = self.step_opcode();
-
-        // seems like the best way to do this from online is to do a match case statement
-        let x = operation >> 6;
-        let y = operation >> 3 & 7;
-        let z = operation & 7;
-
-        //let mem = self.device_memory.lock().unwrap();
-
-        cycle
-            + match (x, y, z) {
-                // --- block 1: 8-bit loads
-                // special case LD (HL),(HL): HALT
-                (1, 6, 6) => {
-                    self.halt();
-                    4
-                }
-                // LD (HL),r; LD (IX+d),r; LD (IY+d),r
-                // NOTE: this always loads from H,L, never IXH, ...
-                (1, 6, _) => {
-                    let a = self.load_addr(extention);
-                    let v = self.registers.get_reg8_by_index(z);
-                    self.device_memory.lock().unwrap().write_byte(a, v);
-                    7 + extention_cycle
-                }
-                // LD r,(HL); LD r,(IX+d); LD r,(IY+d)
-                // NOTE: this always loads to H,L, never IXH,...
-                (1, _, 6) => {
-                    let a = self.load_addr(extention);
-                    let v = self.device_memory.lock().unwrap().read_byte(a);
-                    self.registers.set_reg8_by_index(y, v);
-                    7 + extention_cycle
-                }
-                // LD r,s
-                (1, _, _) => {
-                    let v = self.registers.get_reg8_by_index(z);
-                    self.registers.set_reg8_by_index(y, v);
-                    4
-                }
-                // --- block 2: 8-bit ALU instructions
-                // ALU (HL); ALU (IX+d); ALU (IY+d)
-                (2, _, _) => {
-                    if z == 6 {
-                        // ALU (HL); ALU (IX+d); ALU (IY+d)
-                        let a = self.load_addr(extention);
-                        let val = self.device_memory.lock().unwrap().read_byte(a);
-                        self.alu8(y, val);
-                        7 + extention_cycle
-                    } else {
-                        // ALU r
-                        let val = self.registers.get_reg8_by_index(z);
-                        self.alu8(y.into(), val);
-                        4
-                    }
-                }
-                // --- block 0: misc ops
-                // NOP
-                (0, 0, 0) => 4,
-                // EX AF,AF'
-                (0, 1, 0) => {
-                    self.registers.swap(AF, AF_); // TODO: Change out swap
-                    4
-                }
-                // DJNZ
-                (0, 2, 0) => self.djnz(),
-                // JR d
-                (0, 3, 0) => {
-                    let pc = self.registers.val_pc();
-                    let offset = self.device_memory.lock().unwrap().read_byte(pc) as i8;
-                    let wz = ((pc as i16) + offset as i16 + 1) as Word;
-                    self.registers.set_pc(wz);
-                    self.registers.set_wz(wz);
-                    12
-                }
-                // JR cc
-                (0, _, 0) => {
-                    let pc = self.registers.val_pc();
-                    if self.check_condition(y - 4) {
-                        let offset = self.device_memory.lock().unwrap().read_byte(pc) as i8;
-                        let wz = ((pc as i16) + offset as i16 + 1) as Word;
-                        self.registers.set_pc(wz);
-                        self.registers.set_wz(wz);
-                        12
-                    } else {
-                        self.registers.inc_pc(1);
-                        7
-                    }
-                }
-                // 16-bit immediate loads and 16-bit ADD
-                (0, _, 1) => {
-                    let p = y >> 1;
-                    let q = y & 1;
-                    if q == 0 {
-                        // LD rr,nn (inkl IX,IY)
-                        let val = self.imm16();
-                        self.registers.set_r16sp(p, val);
-                        10
-                    } else {
-                        // ADD HL,rr; ADD IX,rr; ADD IY,rr
-                        let acc = self.registers.r16sp(2);
-                        let val = self.registers.r16sp(p);
-                        let res = self.add16(acc, val);
-                        self.registers.set_r16sp(2, res);
-                        11
-                    }
-                }
-                (0, _, 2) => {
-                    // indirect loads
-                    let p = y >> 1;
-                    let q = y & 1;
-                    match (q, p) {
-                        // LD (nn),HL; LD (nn),IX; LD (nn),IY
-                        (0, 2) => {
-                            let addr = self.imm16();
-                            let v = self.registers.r16sp(2);
-                            let mut mem = self.device_memory.lock().unwrap();
-                            mem.write_word(addr, v);
-                            self.registers.set_wz(addr + 1);
-                            16
-                        }
-                        // LD (nn),A
-                        (0, 3) => {
-                            let addr = self.imm16();
-                            let a = self.registers.val_a();
-                            self.device_memory.lock().unwrap().write_byte(addr, a);
-                            self.registers.set_wz(addr + 1);
-                            13
-                        }
-                        // LD (BC),A; LD (DE),A,; LD (nn),A
-                        (0, _) => {
-                            let addr = if p == 0 {
-                                self.registers.val_bc()
-                            } else {
-                                self.registers.val_de()
-                            };
-                            let a = self.registers.val_a();
-                            self.device_memory.lock().unwrap().write_byte(addr, a);
-                            self.registers
-                                .set_wz((a as Word) << 8 | ((addr + 1) & 0xFF));
-                            7
-                        }
-                        // LD HL,(nn); LD IX,(nn); LD IY,(nn)
-                        (1, 2) => {
-                            let addr = self.imm16();
-                            let val = self.device_memory.lock().unwrap().read_word(addr);
-                            self.registers.set_r16sp(2, val);
-                            self.registers.set_wz(addr + 1);
-                            16
-                        }
-                        // LD A,(nn)
-                        (1, 3) => {
-                            let addr = self.imm16();
-                            let val = self.device_memory.lock().unwrap().read_byte(addr);
-                            self.registers.set_a(val);
-                            self.registers.set_wz(addr + 1);
-                            13
-                        }
-                        // LD A,(BC); LD A,(DE)
-                        (1, _) => {
-                            let addr = if p == 0 {
-                                self.registers.val_bc()
-                            } else {
-                                self.registers.val_de()
-                            };
-                            let val = self.device_memory.lock().unwrap().read_byte(addr);
-                            self.registers.set_a(val);
-                            self.registers.set_wz(addr + 1);
-                            7
-                        }
-                        (_, _) => unreachable!(),
-                    }
-                }
-                (0, _, 3) => {
-                    // 16-bit INC/DEC
-                    let p = y >> 1;
-                    let q = y & 1;
-                    let val = self.registers.r16sp(p) + if q == 0 { 1 } else { Word::MAX };
-                    self.registers.set_r16sp(p, val);
-                    6
-                }
-                // INC (HL); INC (IX+d); INC (IY+d)
-                (0, 6, 4) => {
-                    let addr = self.load_addr(extention);
-                    let v = self.device_memory.lock().unwrap().read_byte(addr);
-                    let w = self.inc8(v);
-                    self.device_memory.lock().unwrap().write_byte(addr, w);
-                    11 + extention_cycle
-                }
-                // INC r
-                (0, _, 4) => {
-                    let v = self.registers.get_reg8_by_index(y);
-                    let w = self.inc8(v);
-                    self.registers.set_reg8_by_index(y, w);
-                    4
-                }
-                // DEC (HL); DEC (IX+d); DEC (IY+d)
-                (0, 6, 5) => {
-                    let addr = self.load_addr(extention);
-                    let v = self.device_memory.lock().unwrap().read_byte(addr);
-                    let w = self.dec8(v);
-                    self.device_memory.lock().unwrap().write_byte(addr, w);
-                    11 + extention_cycle
-                }
-                // DEC r
-                (0, _, 5) => {
-                    let v = self.registers.get_reg8_by_index(y);
-                    let w = self.dec8(v);
-                    self.registers.set_reg8_by_index(y, w);
-                    4
-                }
-                // LD r,n; LD (HL),n; LD (IX+d),n; LD (IY+d),n
-                (0, _, 6) => {
-                    if y == 6 {
-                        // LD (HL),n; LD (IX+d),n; LD (IY+d),n
-                        let addr = self.load_addr(extention);
-                        let v = self.imm8();
-                        self.device_memory.lock().unwrap().write_byte(addr, v);
-                        if extention { 15 } else { 10 }
-                    } else {
-                        // LD r,n
-                        let v = self.imm8();
-                        self.registers.set_reg8_by_index(y, v);
-                        7
-                    }
-                }
-                // misc ops on A and F
-                (0, _, 7) => {
-                    match y {
-                        0 => self.rlca8(),
-                        1 => self.rrca8(),
-                        2 => self.rla8(),
-                        3 => self.rra8(),
-                        4 => self.daa(),
-                        5 => self.cpl(),
-                        6 => self.scf(),
-                        7 => self.ccf(),
-                        _ => unreachable!(),
-                    }
-                    4
-                }
-                // --- block 3: misc and prefixed ops
-                (3, _, 0) => {
-                    // RET cc
-                    self.retcc(y)
-                }
-                (3, _, 1) => {
-                    let p = y >> 1;
-                    let q = y & 1;
-                    match (q, p) {
-                        (0, _) => {
-                            // POP BC,DE,HL,IX,IY
-                            let val = self.pop_stack();
-                            self.registers.set_r16af(p, val);
-                            10
-                        }
-                        (1, 0) => {
-                            // RET
-                            self.ret()
-                        }
-                        (1, 1) => {
-                            // EXX
-                            self.registers.swap(BC, BC_);
-                            self.registers.swap(DE, DE_);
-                            self.registers.swap(HL, HL_);
-                            self.registers.swap(WZ, WZ_);
-                            4
-                        }
-                        (1, 2) => {
-                            // JP HL; JP IX; JP IY
-                            let v = self.registers.r16sp(2);
-                            self.registers.set_pc(v);
-                            4
-                        }
-                        (1, 3) => {
-                            // LD SP,HL, LD SP,IX; LD SP,IY
-                            let v = self.registers.r16sp(2);
-                            self.registers.set_sp(v);
-                            6
-                        }
-                        (_, _) => unreachable!(),
-                    }
-                }
-                (3, _, 2) => {
-                    // JP cc,nn
-                    let nn = self.imm16();
-                    self.registers.set_wz(nn);
-                    if self.check_condition(y) {
-                        self.registers.set_pc(nn);
-                    }
-                    10
-                }
-                (3, _, 3) => {
-                    // misc ops
-                    match y {
-                        0 => {
-                            // JP nn
-                            let nn = self.imm16();
-                            self.registers.set_wz(nn);
-                            self.registers.set_pc(nn);
-                            10
-                        }
-                        1 => self.do_cb_op(extention),
-                        2 => {
-                            // OUT (n),A
-                            let a = self.registers.val_a();
-                            let _port =
-                                (((a as Word) << 8 | self.imm8() as Word) as Word & 0xFFFF) as Word;
-                            // self.outp(bus, port, a); TODO: Implement port output
-                            11
-                        }
-                        3 => {
-                            // IN A,(n)
-                            let _port = ((self.registers.val_a() as Word) << 8
-                                | self.imm8() as Word)
-                                & 0xFFFF;
-                            //let v = self.inp(bus, port); TODO: Implement port input
-                            // self.registers.set_a(v as Byte);
-                            11
-                        }
-                        4 => {
-                            // EX (SP),HL; EX (SP),IX; EX (SP),IY
-                            let sp = self.registers.val_sp();
-                            let v_reg = self.registers.r16sp(2);
-                            let v_mem = self.device_memory.lock().unwrap().read_word(sp);
-                            self.device_memory.lock().unwrap().write_word(sp, v_reg);
-                            self.registers.set_wz(v_mem);
-                            self.registers.set_r16sp(2, v_mem);
-                            19
-                        }
-                        5 => {
-                            // EX DE,HL
-                            self.registers.swap(DE, HL);
-                            4
-                        }
-                        6 => {
-                            // DI
-                            // self.iff1 = false;
-                            // self.iff2 = false;
-                            4
-                        }
-                        7 => {
-                            // EI
-                            self.ime = true;
-                            4
-                        }
-                        _ => unreachable!(),
-                    }
-                }
-                (3, _, 4) => {
-                    // CALL cc
-                    self.callcc(y)
-                }
-                (3, _, 5) => {
-                    let p = y >> 1;
-                    let q = y & 1;
-                    match (q, p) {
-                        (0, _) => {
-                            // PUSH BC,DE,HL,IX,IY,AF
-                            let v = self.registers.r16af(p);
-                            self.push_stack(v);
-                            11
-                        }
-                        (1, 0) => {
-                            // CALL nn
-                            self.call()
-                        }
-                        (1, 1) => {
-                            // DD prefix instructions
-                            // self.registers.patch_ix(); TODO: Implement IX patching
-                            // let cycles = self.do_op(bus, true);
-                            // self.registers.unpatch(); TODO: Implement IX patching
-                            8 as i64
-                        }
-                        (1, 2) => {
-                            // ED prefix instructions
-                            self.do_ed_op()
-                        }
-                        (1, 3) => {
-                            // FD prefix instructions
-                            //self.registers.patch_iy();
-                            //let cycles = self.do_op(bus, true);
-                            //self.registers.unpatch(); TODO: Implement IX patching
-                            8 as i64
-                        }
-                        (_, _) => unreachable!(),
-                    }
-                }
-                // ALU n
-                (3, _, 6) => {
-                    let val = self.imm8();
-                    self.alu8(y, val);
-                    7
-                }
-                // RST
-                (3, _, 7) => {
-                    self.rst((y * 8) as Word);
-                    11
-                }
-                // not implemented
-                _ => panic!("Invalid instruction!"),
-            }
-    }
-
-    pub fn djnz(&mut self) -> i64 {
-        let b = (self.registers.val_b().wrapping_sub(1)) & 0xFF;
-        self.registers.set_b(b);
-        if b > 0 {
-            let addr = self.registers.val_pc();
-            let d = self.device_memory.lock().unwrap().read_byte(addr) as i8;
-            let wz = ((addr as i16) + d as i16 + 1) as Word;
-            self.registers.set_wz(wz);
-            self.registers.set_pc(wz);
-            13 // return num cycles if branch taken
+        if self.halted {
+            // Emulate a noop instruction
+            1
         } else {
-            let pc = self.registers.val_pc() + 1;
-            self.registers.set_pc(pc);
-            8 // return num cycles if loop finished
-        }
-    }
-
-    #[inline(always)]
-    pub fn rst(&mut self, val: Word) {
-        let pc = self.registers.val_pc();
-        self.push_stack(pc);
-        self.registers.set_pc(val);
-        self.registers.set_wz(val);
-    }
-
-    /// fetch and execute ED prefix instruction
-    fn do_ed_op(&mut self) -> i64 {
-        let op = self.step_opcode();
-
-        // split instruction byte into bit groups
-        let x = op >> 6;
-        let y = op >> 3 & 7;
-        let z = op & 7;
-        match (x, y, z) {
-            // block instructions
-            (2, 4, 0) => {
-                self.ldi();
-                16
-            }
-            (2, 5, 0) => {
-                self.ldd();
-                16
-            }
-            (2, 6, 0) => self.ldir(),
-            (2, 7, 0) => self.lddr(),
-            (2, 4, 1) => {
-                self.cpi();
-                16
-            }
-            (2, 5, 1) => {
-                self.cpd();
-                16
-            }
-            (2, 6, 1) => self.cpir(),
-            (2, 7, 1) => self.cpdr(),
-            (2, 4, 2) => {
-                self.ini();
-                16
-            }
-            (2, 5, 2) => {
-                //self.ind(bus); TODO: Enable port input
-                16
-            }
-            //(2, 6, 2) => self.inir(bus), TODO: Enable port input
-            //(2, 7, 2) => self.indr(bus),
-            (2, 4, 3) => {
-                // self.outi(bus); TODO: Enable port output
-                16
-            }
-            (2, 5, 3) => {
-                //self.outd(bus); TODO: Enable port output
-                16
-            }
-            //(2, 6, 3) => self.otir(bus), TODO: Enable port output
-            //(2, 7, 3) => self.otdr(bus),
-            (1, 6, 0) => {
-                // IN F,(C) (undocumented special case, only alter flags,
-                // don't store result)
-                let _bc = self.registers.val_bc();
-                //let v = self.inp(bus, bc); TODO: Enable port input
-                //let f = flags_szp(v) | (self.registers.val_f() & CF);
-                //self.registers.set_f(f);
-                12
-            }
-            (1, _, 0) => {
-                // IN r,(C)
-                let bc = self.registers.val_bc();
-                let v = self.inp(bc);
-                self.registers.set_reg8_by_index(y as Byte, v);
-                let f = flags_szp(v) | (self.registers.val_f() & CF);
-                self.registers.set_f(f);
-                12
-            }
-            (1, 6, 1) => {
-                // OUT (C),F (undocumented special case, always output 0)
-                let bc = self.registers.val_bc();
-                self.outp(bc, 0);
-                12
-            }
-            (1, _, 1) => {
-                // OUT (C),r
-                let bc = self.registers.val_bc();
-                let v = self.registers.get_reg8_by_index(y as Byte);
-                self.outp(bc, v);
-                12
-            }
-            (1, _, 2) => {
-                // SBC/ADC HL,rr
-                let p = y >> 1;
-                let q = y & 1;
-                let acc = self.registers.val_hl();
-                let val = self.registers.r16sp(p);
-                let res = if q == 0 {
-                    self.sbc16(acc, val)
-                } else {
-                    self.adc16(acc, val)
-                };
-                self.registers.set_hl(res);
-                15
-            }
-            (1, _, 3) => {
-                // 16-bit immediate address load/store
-                let p = y >> 1;
-                let q = y & 1;
-                let nn = self.imm16();
-                if q == 0 {
-                    // LD (nn),rr
-                    let val = self.registers.r16sp(p as Byte);
-                    self.device_memory.lock().unwrap().write_word(nn, val);
-                } else {
-                    // LD rr,(nn)
-                    let val = self.device_memory.lock().unwrap().read_word(nn);
-                    self.registers.set_r16sp(p, val);
-                }
-                self.registers.set_wz(nn + 1);
-                20
-            }
-            (1, _, 4) => {
-                self.neg8();
-                8
-            }
-            (1, 1, 5) => {
-                // RETI (RETN is not implemented)
-                // self.reti(bus) TODO: Implement reti
-                unimplemented!();
-                //10
-            }
-            (1, _, 6) => {
-                // TODO: Implement
-                let mut mem = self.device_memory.lock().unwrap();
-                match y {
-                    0 | 1 | 4 | 5 => {
-                        mem.request_interrupt(0);
-                    }
-                    2 | 6 => {
-                        mem.request_interrupt(1);
-                    }
-                    3 | 7 => {
-                        mem.request_interrupt(2);
-                    }
-                    _ => unreachable!(),
-                }
-                drop(mem);
-                8
-            }
-            (1, 0, 7) => {
-                // self.registers.i = self.registers.val_a(); TODO: Implement I register
-                unimplemented!();
-                //9
-            } // LD I,A
-            (1, 1, 7) => {
-                // TODO: Implement refresh register
-                //self.registers.r = self.registers.a();
-                unimplemented!();
-                //9
-            } // LD R,A
-            (1, 2, 7) => {
-                // LD A,I
-                // let i = self.registers.i;
-                // self.registers.set_a(i);
-                // let f = flags_sziff2(i, self.iff2) | (self.registers.f() & CF);
-                // self.registers.set_f(f);
-                //TODO: Implement i register
-                unimplemented!();
-                //9
-            }
-            (1, 3, 7) => {
-                // LD A,R
-                // let r = self.registers.r;
-                // self.registers.set_a(r);
-                // let f = flags_sziff2(r, self.iff2) | (self.registers.f() & CF);
-                // self.registers.set_f(f);
-                // TODO: Implement A register
-                unimplemented!();
-                //9
-            }
-            (1, 4, 7) => {
-                self.rrd();
-                18
-            } // RRD
-            (1, 5, 7) => {
-                self.rld();
-                18
-            } // RLD
-            (1, _, 7) => 9, // NOP (ED)
-            _ => panic!("CB: Invalid instruction!"),
-        }
-    }
-
-    /// fetch and execute CB prefix instruction
-    fn do_cb_op(&mut self, ext: bool) -> i64 {
-        let d = if ext { self.d() } else { 0 };
-        let op = self.step_opcode();
-        let cyc = if ext { 4 } else { 0 };
-
-        // split instruction byte into bit groups
-        let x = op >> 6;
-        let y = op >> 3 & 7;
-        let z = op & 7;
-        cyc + match x {
-            0 => {
-                // rotates and shifts
-                if z == 6 {
-                    // ROT (HL); ROT (IX+d); ROT (IY+d)
-                    let a = self.addr_d(d as Word, ext);
-                    let v = self.device_memory.lock().unwrap().read_byte(a);
-                    let w = self.rot(y, v);
-                    self.device_memory.lock().unwrap().write_byte(a, w);
-                    15
-                } else if ext {
-                    // undocumented: ROT (IX+d), (IY+d),r
-                    // (also stores result in a register)
-                    let a = self.addr_d(d as Word, ext);
-                    let v = self.device_memory.lock().unwrap().read_byte(a);
-                    let w = self.rot(y, v);
-                    self.registers.set_reg8_by_index(z, w);
-                    self.device_memory.lock().unwrap().write_byte(a, w);
-                    15
-                } else {
-                    // ROT r
-                    let v = self.registers.get_reg8_by_index(z);
-                    let w = self.rot(y, v);
-                    self.registers.set_reg8_by_index(z, w);
-                    8
-                }
-            }
-            1 => {
-                // BIT n
-                if z == 6 {
-                    // BIT n,(HL); BIT n,(IX+d); BIT n,(IY+d)
-                    let a = self.addr_d(d as Word, ext);
-                    let v = self.device_memory.lock().unwrap().read_byte(a);
-                    self.ibit(v, 1 << y);
-                    12
-                } else {
-                    // BIT n,r
-                    let v = self.registers.get_reg8_by_index(z);
-                    self.bit(v, 1 << y);
-                    8
-                }
-            }
-            2 => {
-                // RES n
-                if z == 6 {
-                    // RES n,(HL); RES n,(IX+d); RES n,(IY+d)
-                    let a = self.addr_d(d.into(), ext);
-                    let v = self.device_memory.lock().unwrap().read_byte(a) & !(1 << y);
-                    self.device_memory.lock().unwrap().write_byte(a, v);
-                    15
-                } else if ext {
-                    // RES n,(IX+d),r; RES n,(IY+d),r
-                    // (also stores result in a register)
-                    let a = self.addr_d(d.into(), ext);
-                    let v = self.device_memory.lock().unwrap().read_byte(a) & !(1 << y);
-                    self.registers.set_reg8_by_index(z, v);
-                    self.device_memory.lock().unwrap().write_byte(a, v);
-                    15
-                } else {
-                    // RES n,r
-                    let v = self.registers.get_reg8_by_index(z) & !(1 << y);
-                    self.registers.set_reg8_by_index(z, v);
-                    8
-                }
-            }
-            3 => {
-                // SET n
-                if z == 6 {
-                    // SET n,(HL); SET n,(IX+d); SET n,(IY+d)
-                    let a = self.addr_d(d.into(), ext);
-                    let v = self.device_memory.lock().unwrap().read_byte(a) | 1 << y;
-                    self.device_memory.lock().unwrap().write_byte(a, v);
-                    15
-                } else if ext {
-                    // SET n,(IX+d),r; SET n,(IY+d),r
-                    // (also stores result in a register)
-                    let a = self.addr_d(d.into(), ext);
-                    let v = self.device_memory.lock().unwrap().read_byte(a) | 1 << y;
-                    self.registers.set_reg8_by_index(z, v);
-                    self.device_memory.lock().unwrap().write_byte(a, v);
-                    15
-                } else {
-                    // SET n,r
-                    let v = self.registers.get_reg8_by_index(z) | 1 << y;
-                    self.registers.set_reg8_by_index(z, v);
-                    8
-                }
-            }
-            _ => unreachable!(),
-        }
-    }
-
-    /// Gets the opcode at the PC and incriments it by one
-    fn step_opcode(&mut self) -> Byte {
-        let mem = self.device_memory.lock().unwrap();
-
-        let opcode = mem.read_byte_forced(self.registers.reg_pc.value());
-        self.registers.reg_pc.incriment();
-
-        // Return opcode
-        opcode
-    }
-
-    fn halt(&mut self) {
-        self.halted = true;
-        self.registers.dec_pc(1);
-    }
-
-    fn alu8(&mut self, alu: Byte, val: Byte) {
-        match alu {
-            0 => self.add8(val),
-            1 => self.adc8(val),
-            2 => self.sub8(val),
-            3 => self.sbc8(val),
-            4 => self.and8(val),
-            5 => self.xor8(val),
-            6 => self.or8(val),
-            7 => self.cp8(val),
-            _ => unreachable!(),
-        }
-    }
-
-    #[inline(always)]
-    pub fn add8(&mut self, add: Byte) {
-        let acc = self.registers.val_a();
-        let res = acc.wrapping_add(add);
-        self.registers.set_f(flags_add(acc, add, res));
-        self.registers.set_a(res);
-    }
-
-    #[inline(always)]
-    pub fn adc8(&mut self, add: Byte) {
-        let acc = self.registers.val_a();
-        let carry = self.registers.val_f() & CF;
-        let res = acc.wrapping_add(add).wrapping_add(carry);
-        self.registers.set_f(flags_add(acc, add, res));
-        self.registers.set_a(res);
-    }
-
-    #[inline(always)]
-    pub fn sub8(&mut self, sub: Byte) {
-        let acc = self.registers.val_a();
-        let res = acc.wrapping_sub(sub);
-        self.registers.set_f(flags_sub(acc, sub, res));
-        self.registers.set_a(res);
-    }
-
-    #[inline(always)]
-    pub fn sbc8(&mut self, sub: Byte) {
-        let acc = self.registers.val_a();
-        let res = acc
-            .wrapping_sub(sub)
-            .wrapping_sub(self.registers.val_f() & CF);
-        self.registers.set_f(flags_sub(acc, sub, res));
-        self.registers.set_a(res);
-    }
-
-    #[inline(always)]
-    pub fn cp8(&mut self, sub: Byte) {
-        let acc = self.registers.val_a();
-        let res = acc.wrapping_sub(sub);
-        self.registers.set_f(flags_cp(acc, sub, res));
-    }
-
-    #[inline(always)]
-    pub fn neg8(&mut self) {
-        let sub = self.registers.val_a();
-        self.registers.set_a(0);
-        self.sub8(sub);
-    }
-
-    #[inline(always)]
-    pub fn and8(&mut self, val: Byte) {
-        let res = self.registers.val_a() & val;
-        self.registers.set_a(res);
-        self.registers.set_f(flags_szp(res) | HF);
-    }
-
-    #[inline(always)]
-    pub fn or8(&mut self, val: Byte) {
-        let res = self.registers.val_a() | val;
-        self.registers.set_a(res);
-        self.registers.set_f(flags_szp(res));
-    }
-
-    #[inline(always)]
-    pub fn xor8(&mut self, val: Byte) {
-        let res = self.registers.val_a() ^ val;
-        self.registers.set_a(res);
-        self.registers.set_f(flags_szp(res));
-    }
-
-    fn load_addr(&mut self, extention: bool) -> Word {
-        if extention {
-            let addr = (self.registers.get_16b_sp_reg(2) + self.d() as Word) & 0xFFFF;
-            self.registers.set_wz(addr);
-            addr
-        } else {
-            self.registers.val_hl()
-        }
-    }
-
-    #[inline(always)]
-    pub fn add16(&mut self, acc: Word, add: Word) -> Word {
-        self.registers.set_wz(acc.wrapping_add(1));
-        let res = acc.wrapping_add(add);
-        let f = (self.registers.val_f() & (SF | ZF | VF))
-            | (((acc ^ res ^ add) >> 8) as Byte & HF)
-            | ((((acc as u32) + (add as u32)) >> 16) as Byte & CF)
-            | ((res >> 8) as Byte & (YF | XF));
-        self.registers.set_f(f);
-        res & 0xFFFF
-    }
-
-    #[cfg_attr(rustfmt, rustfmt_skip)]
-    pub fn inc8(&mut self, val: Byte) -> Byte {
-        let res = val.wrapping_add(1);
-        let f = (if res == 0 {ZF} else {res & SF}) |
-            (res & (XF | YF)) | ((res ^ val) & HF) |
-            (if res == 0x80 {VF} else {0}) |
-            (self.registers.val_f() & CF);
-        self.registers.set_f(f);
-        res
-    }
-
-    #[cfg_attr(rustfmt, rustfmt_skip)]
-    pub fn dec8(&mut self, val: Byte) -> Byte {
-        let res = val.wrapping_sub(1);
-        let f = NF | (if res == 0 {ZF} else {res & SF}) |
-            (res & (XF | YF)) | ((res ^ val) & HF) |
-            (if res == 0x7F {VF} else {0}) |
-            (self.registers.val_f() & CF);
-        self.registers.set_f(f);
-        res
-    }
-
-    /// load 8-bit unsigned immediate operand and increment PC
-    #[inline(always)]
-    fn imm8(&mut self) -> Byte {
-        let pc = self.registers.val_pc();
-        let imm = self.device_memory.lock().unwrap().read_byte(pc);
-        self.registers.inc_pc(1);
-        imm
-    }
-
-    #[inline(always)]
-    pub fn rlca8(&mut self) {
-        let acc = self.registers.val_a();
-        let res = (acc << 1 | acc >> 7) & 0xFF;
-        let f = ((acc >> 7) & CF) | (res & (XF | YF)) | (self.registers.val_f() & (SF | ZF | PF));
-        self.registers.set_f(f);
-        self.registers.set_a(res);
-    }
-
-    #[inline(always)]
-    pub fn rrca8(&mut self) {
-        let acc = self.registers.val_a();
-        let res = (acc >> 1 | acc << 7) & 0xFF;
-        let f = (acc & CF) | (res & (XF | YF)) | (self.registers.val_f() & (SF | ZF | PF));
-        self.registers.set_f(f);
-        self.registers.set_a(res);
-    }
-
-    #[inline(always)]
-    pub fn rl8(&mut self, val: Byte) -> Byte {
-        let res = (val << 1 | (self.registers.val_f() & CF)) & 0xFF;
-        self.registers.set_f(flags_szp(res) | ((val >> 7) & CF));
-        res
-    }
-
-    #[inline(always)]
-    pub fn rla8(&mut self) {
-        let acc = self.registers.val_a();
-        let f = self.registers.val_f();
-        let res = (acc << 1 | (f & CF)) & 0xFF;
-        self.registers
-            .set_f(((acc >> 7) & CF) | (res & (XF | YF)) | (f & (SF | ZF | PF)));
-        self.registers.set_a(res);
-    }
-
-    #[inline(always)]
-    pub fn rr8(&mut self, val: Byte) -> Byte {
-        let res = (val >> 1 | (self.registers.val_f() & CF) << 7) & 0xFF;
-        self.registers.set_f(flags_szp(res) | (val & CF));
-        res
-    }
-
-    #[inline(always)]
-    pub fn rra8(&mut self) {
-        let acc = self.registers.val_a();
-        let f = self.registers.val_f();
-        let res = (acc >> 1 | (f & CF) << 7) & 0xFF;
-        self.registers
-            .set_f((acc & CF) | (res & (XF | YF)) | (f & (SF | ZF | PF)));
-        self.registers.set_a(res);
-    }
-
-    #[inline(always)]
-    pub fn sla8(&mut self, val: Byte) -> Byte {
-        let res = (val << 1) & 0xFF;
-        self.registers.set_f(flags_szp(res) | (val >> 7 & CF));
-        res
-    }
-
-    #[inline(always)]
-    pub fn sll8(&mut self, val: Byte) -> Byte {
-        // undocumented, sll8 is identical with sla8, but shifts a 1 into LSB
-        let res = (val << 1 | 1) & 0xFF;
-        self.registers.set_f(flags_szp(res) | (val >> 7 & CF));
-        res
-    }
-
-    #[inline(always)]
-    pub fn sra8(&mut self, val: Byte) -> Byte {
-        let res = (val >> 1 | (val & 0x80)) & 0xFF;
-        self.registers.set_f(flags_szp(res) | (val & CF));
-        res
-    }
-
-    #[inline(always)]
-    pub fn srl8(&mut self, val: Byte) -> Byte {
-        let res = val >> 1 & 0xFF;
-        self.registers.set_f(flags_szp(res) | (val & CF));
-        res
-    }
-
-    #[inline(always)]
-    pub fn rld(&mut self) {
-        let addr = self.registers.val_hl();
-        let v = self.device_memory.lock().unwrap().read_byte(addr);
-        let ah = self.registers.val_a() & 0xF0;
-        let al = self.registers.val_a() & 0x0F;
-        let a = ah | (v >> 4 & 0x0F);
-        self.registers.set_a(a);
-        self.device_memory
-            .lock()
-            .unwrap()
-            .write_byte(addr, (v << 4 | al) & 0xFF);
-        self.registers.set_wz(addr + 1);
-        let f = flags_szp(a) | (self.registers.val_f() & CF);
-        self.registers.set_f(f);
-    }
-
-    #[inline(always)]
-    pub fn rrd(&mut self) {
-        let addr = self.registers.val_hl();
-        let v = self.device_memory.lock().unwrap().read_byte(addr);
-        let ah = self.registers.val_a() & 0xF0;
-        let al = self.registers.val_a() & 0x0F;
-        let a = ah | (v & 0x0F);
-        self.registers.set_a(a);
-        self.device_memory
-            .lock()
-            .unwrap()
-            .write_byte(addr, (v >> 4 | al << 4) & 0xFF);
-        self.registers.set_wz(addr + 1);
-        let f = flags_szp(a) | (self.registers.val_f() & CF);
-        self.registers.set_f(f);
-    }
-
-    #[inline(always)]
-    #[cfg_attr(rustfmt, rustfmt_skip)]
-    pub fn bit(&mut self, val: Byte, mask: Byte) {
-        let res = val & mask;
-        let f = HF | (self.registers.val_f() & CF) | (if res == 0 {ZF | PF} else {res & SF}) |
-            (val & (XF | YF));
-        self.registers.set_f(f)
-    }
-
-    #[inline(always)]
-    #[cfg_attr(rustfmt, rustfmt_skip)]
-    pub fn daa(&mut self) {
-        let a = self.registers.val_a();
-        let mut val = a;
-        let f = self.registers.val_f();
-        if 0 != (f & NF) {
-            if ((a & 0xF) > 0x9) || (0 != (f & HF)) {
-                val = (val - 0x06) & 0xFF;
-            }
-            if (a > 0x99) || (0 != (f & CF)) {
-                val = (val - 0x60) & 0xFF;
-            }
-        } else {
-            if ((a & 0xF) > 0x9) || (0 != (f & HF)) {
-                val = (val + 0x06) & 0xFF;
-            }
-            if (a > 0x99) || (0 != (f & CF)) {
-                val = (val + 0x60) & 0xFF;
-            }
-        }
-        self.registers.set_f((f & (CF | NF)) |
-                       (if a > 0x99 {CF} else {0}) |
-                       ((a ^ val) & HF) | flags_szp(val));
-        self.registers.set_a(val);
-    }
-
-    #[inline(always)]
-    pub fn cpl(&mut self) {
-        let f = self.registers.val_f();
-        let a = self.registers.val_a() ^ 0xFF;
-        self.registers
-            .set_f((f & (SF | ZF | PF | CF)) | (HF | NF) | (a & (YF | XF)));
-        self.registers.set_a(a);
-    }
-
-    #[inline(always)]
-    pub fn scf(&mut self) {
-        let f = self.registers.val_f();
-        let a = self.registers.val_a();
-        self.registers
-            .set_f((f & (SF | ZF | YF | XF | PF)) | CF | (a & (YF | XF)));
-    }
-
-    #[inline(always)]
-    pub fn ccf(&mut self) {
-        let f = self.registers.val_f();
-        let a = self.registers.val_a();
-        self.registers
-            .set_f(((f & (SF | ZF | YF | XF | PF | CF)) | ((f & CF) << 4) | (a & (YF | XF))) ^ CF);
-    }
-
-    #[inline(always)]
-    pub fn ret(&mut self) -> i64 {
-        let sp = self.registers.val_sp();
-        let wz = self.device_memory.lock().unwrap().read_word(sp);
-        self.registers.set_wz(wz);
-        self.registers.set_pc(wz);
-        self.registers.set_sp(sp.wrapping_add(2));
-        10
-    }
-
-    #[inline(always)]
-    pub fn call(&mut self) -> i64 {
-        let wz = self.imm16();
-        let sp = (self.registers.val_sp() - 2) & 0xFFFF;
-        self.device_memory
-            .lock()
-            .unwrap()
-            .write_word(sp, self.registers.val_pc());
-        self.registers.set_sp(sp);
-        self.registers.set_wz(wz);
-        self.registers.set_pc(wz);
-        17
-    }
-
-    #[inline(always)]
-    pub fn retcc(&mut self, y: Byte) -> i64 {
-        if self.check_condition(y) {
-            self.ret() + 1
-        } else {
-            5
-        }
-    }
-
-    #[inline(always)]
-    pub fn callcc(&mut self, y: Byte) -> i64 {
-        if self.check_condition(y) {
             self.call()
+        }
+    }
+
+    fn fetchbyte(&mut self) -> u8 {
+        let b = self.mmu.rb(self.reg.pc);
+        if self.halt_bug {
+            self.halt_bug = false;
         } else {
-            let wz = self.imm16();
-            self.registers.set_wz(wz);
-            10
+            self.reg.pc = self.reg.pc.wrapping_add(1);
         }
+        b
     }
 
-    #[inline(always)]
-    #[cfg_attr(rustfmt, rustfmt_skip)]
-    pub fn ldi(&mut self) {
-        let hl = self.registers.val_hl();
-        let de = self.registers.val_de();
-        let val = self.device_memory.lock().unwrap().read_byte(hl);
-        self.device_memory.lock().unwrap().write_byte(de, val);
-        self.registers.set_hl(hl + 1);
-        self.registers.set_de(de + 1);
-        let bc = (self.registers.val_bc() - 1) & 0xFFFF;
-        self.registers.set_bc(bc);
-        let n = (val + self.registers.val_a()) & 0xFF;
-        let f = (self.registers.val_f() & (SF | ZF | CF)) |
-                (if (n & 0x02) != 0 {YF} else {0}) |
-                (if (n & 0x08) != 0 {XF} else {0}) |
-                (if bc > 0 {VF} else {0});
-        self.registers.set_f(f);
+    fn fetchword(&mut self) -> u16 {
+        let w = self.mmu.rw(self.reg.pc);
+        self.reg.pc += 2;
+        w
     }
 
-    #[inline(always)]
-    #[cfg_attr(rustfmt, rustfmt_skip)]
-    pub fn ldd(&mut self) {
-        let hl = self.registers.val_hl();
-        let de = self.registers.val_de();
-        let val = self.device_memory.lock().unwrap().read_byte(hl);
-        self.device_memory.lock().unwrap().write_byte(de, val);
-        self.registers.set_hl(hl - 1);
-        self.registers.set_de(de - 1);
-        let bc = (self.registers.val_bc() - 1) & 0xFFFF;
-        self.registers.set_bc(bc);
-        let n = (val + self.registers.val_a()) & 0xFF;
-        let f = (self.registers.val_f() & (SF | ZF | CF)) |
-                (if (n & 0x02) != 0 {YF} else {0}) |
-                (if (n & 0x08) != 0 {XF} else {0}) |
-                (if bc > 0 {VF} else {0});
-        self.registers.set_f(f);
-    }
-
-    #[inline(always)]
-    pub fn ldir(&mut self) -> i64 {
-        self.ldi();
-        if (self.registers.val_f() & VF) != 0 {
-            let pc = self.registers.val_pc();
-            self.registers.dec_pc(2);
-            self.registers.set_wz(pc + 1);
-            21
-        } else {
-            16
-        }
-    }
-
-    #[inline(always)]
-    pub fn lddr(&mut self) -> i64 {
-        self.ldd();
-        if (self.registers.val_f() & VF) != 0 {
-            let pc = self.registers.val_pc();
-            self.registers.dec_pc(2);
-            self.registers.set_wz(pc + 1);
-            21
-        } else {
-            16
-        }
-    }
-
-    #[inline(always)]
-    #[cfg_attr(rustfmt, rustfmt_skip)]
-    pub fn cpi(&mut self) {
-        let wz = self.registers.val_wz();
-        self.registers.set_wz(wz + 1);
-        let hl = self.registers.val_hl();
-        self.registers.set_hl(hl + 1);
-        let bc = (self.registers.val_bc() - 1) & 0xFFFF;
-        self.registers.set_bc(bc);
-        let a = self.registers.val_a();
-        let mut v = a - self.device_memory.lock().unwrap().read_byte(hl);
-        let mut f = NF | (self.registers.val_f() & CF) |
-                    (if v == 0 {ZF} else {v & SF}) |
-                    (if (v & 0xF) > (a & 0xF) {HF} else {0}) |
-                    (if bc != 0 {VF} else {0});
-        if (f & HF) != 0 {
-            v -= 1;
-        }
-        if (v & 0x02) != 0 {
-            f |= YF
+    fn updateime(&mut self) {
+        self.setdi = match self.setdi {
+            2 => 1,
+            1 => {
+                self.ime = false;
+                0
+            }
+            _ => 0,
         };
-        if (v & 0x08) != 0 {
-            f |= XF
+        self.setei = match self.setei {
+            2 => 1,
+            1 => {
+                self.ime = true;
+                0
+            }
+            _ => 0,
         };
-        self.registers.set_f(f);
     }
 
-    #[inline(always)]
-    #[cfg_attr(rustfmt, rustfmt_skip)]
-    pub fn cpd(&mut self) {
-        let wz = self.registers.val_wz();
-        self.registers.set_wz(wz - 1);
-        let hl = self.registers.val_hl();
-        self.registers.set_hl(hl - 1);
-        let bc = (self.registers.val_bc() - 1) & 0xFFFF;
-        self.registers.set_bc(bc);
-        let a = self.registers.val_a();
-        let mut v = a - self.device_memory.lock().unwrap().read_byte(hl);
-        let mut f = NF | (self.registers.val_f() & CF) |
-                    (if v == 0 {ZF} else {v & SF}) |
-                    (if (v & 0xF) > (a & 0xF) {HF} else {0}) |
-                    (if bc != 0 {VF} else {0});
-        if (f & HF) != 0 {
-            v -= 1;
+    fn handleinterrupt(&mut self) -> u32 {
+        if self.ime == false && self.halted == false {
+            return 0;
         }
-        if (v & 0x02) != 0 {
-            f |= YF
-        };
-        if (v & 0x08) != 0 {
-            f |= XF
-        };
-        self.registers.set_f(f);
-    }
 
-    #[inline(always)]
-    pub fn cpir(&mut self) -> i64 {
-        self.cpi();
-        if (self.registers.val_f() & (VF | ZF)) == VF {
-            let pc = self.registers.val_pc();
-            self.registers.dec_pc(2);
-            self.registers.set_wz(pc + 1);
-            21
-        } else {
-            16
+        let ie = self.mmu.read_ie();
+        let mut intf = self.mmu.read_if();
+        let triggered = ie & intf & 0x1F;
+        if triggered == 0 {
+            return 0;
         }
-    }
 
-    #[inline(always)]
-    pub fn cpdr(&mut self) -> i64 {
-        self.cpd();
-        if (self.registers.val_f() & (VF | ZF)) == VF {
-            let pc = self.registers.val_pc();
-            self.registers.dec_pc(2);
-            self.registers.set_wz(pc + 1);
-            21
-        } else {
-            16
+        self.halted = false;
+        if self.ime == false {
+            return 0;
         }
-    }
+        self.ime = false;
 
-    #[inline(always)]
-    pub fn outp(&mut self, _port: Word, _val: Byte) {
-        // bus.cpu_outp(port, val); TODO: Enable port output
-    }
-    #[inline(always)]
-    pub fn inp(&mut self, _port: Word) -> Byte {
-        //bus.cpu_inp(port) & 0xFF // TODO: Enable port input
-        1
-    }
-
-    #[inline(always)]
-    #[cfg_attr(rustfmt, rustfmt_skip)]
-    fn ini_ind_flags(&self, val: Byte, add: Byte) -> Byte {
-        let b = self.registers.val_b();
-        let c = self.registers.val_c();
-        let t: u16 = (((c + add) & 0xFF)+ val) as u16;
-        (if b != 0 {b & SF} else {ZF}) |
-            (if (val & SF) != 0 {NF} else {0}) |
-            (if (t & 0x100) != 0 {HF | CF} else {0}) |
-            (flags_szp((t & 0x07) as u8 ^ b) & PF)
-    }
-
-    #[inline(always)]
-    pub fn ini(&mut self) {
-        let bc = self.registers.val_bc();
-        // let io_val = self.inp(bus, bc); TODO: Enable Port Input
-        self.registers.set_wz(bc + 1);
-        let b = self.registers.val_b();
-        self.registers.set_b(b - 1);
-        let hl = self.registers.val_hl();
-        //self.device_memory.lock().unwrap().write_byte(hl, io_val);
-        self.registers.set_hl(hl + 1);
-        // let f = self.ini_ind_flags(io_val, 1);
-        //self.registers.set_f(f);
-    }
-
-    #[inline(always)]
-    pub fn ind(&mut self) {
-        let bc = self.registers.val_bc();
-        // let io_val = self.inp(bus, bc); TODO: Enable port input
-        self.registers.set_wz(bc - 1);
-        let b = self.registers.val_b();
-        self.registers.set_b(b - 1);
-        let hl = self.registers.val_hl();
-        // self.device_memory.lock().unwrap().write_byte(hl, io_val);
-        self.registers.set_hl(hl - 1);
-        //let f = self.ini_ind_flags(io_val, Byte::MAX);
-        //self.registers.set_f(f);
-    }
-
-    #[inline(always)]
-    pub fn inir(&mut self) -> i64 {
-        self.ini();
-        if self.registers.val_b() != 0 {
-            self.registers.dec_pc(2);
-            21
-        } else {
-            16
+        let n = triggered.trailing_zeros();
+        if n >= 5 {
+            panic!("Invalid interrupt triggered");
         }
+        intf &= !(1 << n);
+        self.mmu.write_if(intf);
+        let pc = self.reg.pc;
+        self.pushstack(pc);
+        self.reg.pc = 0x0040 | ((n as u16) << 3);
+
+        4
     }
 
-    #[inline(always)]
-    pub fn indr(&mut self) -> i64 {
-        self.ind();
-        if self.registers.val_b() != 0 {
-            self.registers.dec_pc(2);
-            21
-        } else {
-            16
-        }
+    fn pushstack(&mut self, value: u16) {
+        self.reg.sp = self.reg.sp.wrapping_sub(2);
+        self.mmu.ww(self.reg.sp, value);
     }
 
-    #[inline(always)]
-    pub fn outi(&mut self) {
-        let hl = self.registers.val_hl();
-        let io_val = self.device_memory.lock().unwrap().read_byte(hl);
-        self.registers.set_hl(hl + 1);
-        let b = self.registers.val_b();
-        self.registers.set_b(b - 1);
-        let bc = self.registers.val_bc();
-        //self.outp(bus, bc, io_val); TODO: Implement port output
-        self.registers.set_wz(bc + 1);
-        let f = self.outi_outd_flags(io_val);
-        self.registers.set_f(f);
-    }
-
-    #[inline(always)]
-    pub fn outd(&mut self) {
-        let hl = self.registers.val_hl();
-        let io_val = self.device_memory.lock().unwrap().read_byte(hl);
-        self.registers.set_hl(hl - 1);
-        let b = self.registers.val_b();
-        self.registers.set_b(b - 1);
-        let bc = self.registers.val_bc();
-        // self.outp(bus, bc, io_val); TODO: Enable port output
-        self.registers.set_wz(bc - 1);
-        let f = self.outi_outd_flags(io_val);
-        self.registers.set_f(f);
-    }
-
-    #[inline(always)]
-    pub fn otir(&mut self) -> i64 {
-        self.outi();
-        if self.registers.val_b() != 0 {
-            self.registers.dec_pc(2);
-            21
-        } else {
-            16
-        }
-    }
-
-    #[inline(always)]
-    pub fn otdr(&mut self) -> i64 {
-        self.outd();
-        if self.registers.val_b() != 0 {
-            self.registers.dec_pc(2);
-            21
-        } else {
-            16
-        }
-    }
-
-    #[inline(always)]
-    #[cfg_attr(rustfmt, rustfmt_skip)]
-    fn outi_outd_flags(&self, val: Byte) -> Byte {
-        let b = self.registers.val_b();
-        let l = self.registers.val_l();
-        let t:u16 = (l + val) as u16;
-        (if b != 0 {b & SF} else {ZF}) |
-            (if (val & SF) != 0 {NF} else {0}) |
-            (if (t & 0x100) != 0 {HF | CF} else {0}) |
-            (flags_szp((t & 0x07) as u8 ^ b) & PF)
-    }
-
-    #[inline(always)]
-    #[cfg_attr(rustfmt, rustfmt_skip)]
-    pub fn adc16(&mut self, acc: Word, add: Word) -> Word {
-        self.registers.set_wz(acc + 1);
-        let res = acc + add + (self.registers.val_f() & CF) as Word;
-        self.registers.set_f(((((acc ^ res ^ add) >> 8) & HF as Word) | ((((res as u32) >> 16) as Word) & CF as Word) |
-                       ((res >> 8) & (SF | XF | YF) as Word) |
-                       (if (res & 0xFFFF) == 0 {ZF as Word} else {0}) |
-                       (((add ^ acc ^ 0x8000) & (add ^ res) & 0x8000)) >> 13) as Byte);
-        res & 0xFFFF
-    }
-
-    #[inline(always)]
-    #[cfg_attr(rustfmt, rustfmt_skip)]
-    pub fn sbc16(&mut self, acc: Word, sub: Word) -> Word {
-        self.registers.set_wz(acc + 1);
-        let res = acc - sub - (self.registers.val_f() & CF) as Word;
-        self.registers.set_f(NF | ((((acc ^ res ^ sub) >> 8) & HF as Word) | ((((res as u32) >> 16) as Word) & CF as Word) |
-                       ((res >> 8) & (SF | XF | YF) as Word) |
-                       (if (res & 0xFFFF) == 0 {ZF as Word} else {0}) |
-                       (((sub ^ acc) & (acc ^ res) & 0x8000) >> 13))as Byte);
-        res & 0xFFFF
-    }
-
-    #[inline(always)]
-    pub fn rot(&mut self, op: Byte, val: Byte) -> Byte {
-        match op {
-            0 => self.rlc8(val),
-            1 => self.rrc8(val),
-            2 => self.rl8(val),
-            3 => self.rr8(val),
-            4 => self.sla8(val),
-            5 => self.sra8(val),
-            6 => self.sll8(val),
-            7 => self.srl8(val),
-            _ => unreachable!(),
-        }
-    }
-
-    #[inline(always)]
-    pub fn rlc8(&mut self, val: Byte) -> Byte {
-        let res = (val << 1 | val >> 7) & 0xFF;
-        self.registers.set_f(flags_szp(res) | ((val >> 7) & CF));
+    fn popstack(&mut self) -> u16 {
+        let res = self.mmu.rw(self.reg.sp);
+        self.reg.sp += 2;
         res
     }
 
-    #[inline(always)]
-    pub fn rrc8(&mut self, val: Byte) -> Byte {
-        let res = (val >> 1 | val << 7) & 0xFF;
-        self.registers.set_f(flags_szp(res) | (val & CF));
-        res
+    fn call(&mut self) -> u32 {
+        let opcode = self.fetchbyte();
+        match opcode {
+            0x00 => 1,
+            0x01 => {
+                let v = self.fetchword();
+                self.reg.setbc(v);
+                3
+            }
+            0x02 => {
+                self.mmu.wb(self.reg.bc(), self.reg.a);
+                2
+            }
+            0x03 => {
+                self.reg.setbc(self.reg.bc().wrapping_add(1));
+                2
+            }
+            0x04 => {
+                self.reg.b = self.alu_inc(self.reg.b);
+                1
+            }
+            0x05 => {
+                self.reg.b = self.alu_dec(self.reg.b);
+                1
+            }
+            0x06 => {
+                self.reg.b = self.fetchbyte();
+                2
+            }
+            0x07 => {
+                self.reg.a = self.alu_rlc(self.reg.a);
+                self.reg.flag(Z, false);
+                1
+            }
+            0x08 => {
+                let a = self.fetchword();
+                self.mmu.ww(a, self.reg.sp);
+                5
+            }
+            0x09 => {
+                self.alu_add16(self.reg.bc());
+                2
+            }
+            0x0A => {
+                self.reg.a = self.mmu.rb(self.reg.bc());
+                2
+            }
+            0x0B => {
+                self.reg.setbc(self.reg.bc().wrapping_sub(1));
+                2
+            }
+            0x0C => {
+                self.reg.c = self.alu_inc(self.reg.c);
+                1
+            }
+            0x0D => {
+                self.reg.c = self.alu_dec(self.reg.c);
+                1
+            }
+            0x0E => {
+                self.reg.c = self.fetchbyte();
+                2
+            }
+            0x0F => {
+                self.reg.a = self.alu_rrc(self.reg.a);
+                self.reg.flag(Z, false);
+                1
+            }
+            0x10 => {
+                self.mmu.switch_speed();
+                1
+            } // STOP
+            0x11 => {
+                let v = self.fetchword();
+                self.reg.setde(v);
+                3
+            }
+            0x12 => {
+                self.mmu.wb(self.reg.de(), self.reg.a);
+                2
+            }
+            0x13 => {
+                self.reg.setde(self.reg.de().wrapping_add(1));
+                2
+            }
+            0x14 => {
+                self.reg.d = self.alu_inc(self.reg.d);
+                1
+            }
+            0x15 => {
+                self.reg.d = self.alu_dec(self.reg.d);
+                1
+            }
+            0x16 => {
+                self.reg.d = self.fetchbyte();
+                2
+            }
+            0x17 => {
+                self.reg.a = self.alu_rl(self.reg.a);
+                self.reg.flag(Z, false);
+                1
+            }
+            0x18 => {
+                self.cpu_jr();
+                3
+            }
+            0x19 => {
+                self.alu_add16(self.reg.de());
+                2
+            }
+            0x1A => {
+                self.reg.a = self.mmu.rb(self.reg.de());
+                2
+            }
+            0x1B => {
+                self.reg.setde(self.reg.de().wrapping_sub(1));
+                2
+            }
+            0x1C => {
+                self.reg.e = self.alu_inc(self.reg.e);
+                1
+            }
+            0x1D => {
+                self.reg.e = self.alu_dec(self.reg.e);
+                1
+            }
+            0x1E => {
+                self.reg.e = self.fetchbyte();
+                2
+            }
+            0x1F => {
+                self.reg.a = self.alu_rr(self.reg.a);
+                self.reg.flag(Z, false);
+                1
+            }
+            0x20 => {
+                if !self.reg.getflag(Z) {
+                    self.cpu_jr();
+                    3
+                } else {
+                    self.reg.pc += 1;
+                    2
+                }
+            }
+            0x21 => {
+                let v = self.fetchword();
+                self.reg.sethl(v);
+                3
+            }
+            0x22 => {
+                self.mmu.wb(self.reg.hli(), self.reg.a);
+                2
+            }
+            0x23 => {
+                let v = self.reg.hl().wrapping_add(1);
+                self.reg.sethl(v);
+                2
+            }
+            0x24 => {
+                self.reg.h = self.alu_inc(self.reg.h);
+                1
+            }
+            0x25 => {
+                self.reg.h = self.alu_dec(self.reg.h);
+                1
+            }
+            0x26 => {
+                self.reg.h = self.fetchbyte();
+                2
+            }
+            0x27 => {
+                self.alu_daa();
+                1
+            }
+            0x28 => {
+                if self.reg.getflag(Z) {
+                    self.cpu_jr();
+                    3
+                } else {
+                    self.reg.pc += 1;
+                    2
+                }
+            }
+            0x29 => {
+                let v = self.reg.hl();
+                self.alu_add16(v);
+                2
+            }
+            0x2A => {
+                self.reg.a = self.mmu.rb(self.reg.hli());
+                2
+            }
+            0x2B => {
+                let v = self.reg.hl().wrapping_sub(1);
+                self.reg.sethl(v);
+                2
+            }
+            0x2C => {
+                self.reg.l = self.alu_inc(self.reg.l);
+                1
+            }
+            0x2D => {
+                self.reg.l = self.alu_dec(self.reg.l);
+                1
+            }
+            0x2E => {
+                self.reg.l = self.fetchbyte();
+                2
+            }
+            0x2F => {
+                self.reg.a = !self.reg.a;
+                self.reg.flag(H, true);
+                self.reg.flag(N, true);
+                1
+            }
+            0x30 => {
+                if !self.reg.getflag(C) {
+                    self.cpu_jr();
+                    3
+                } else {
+                    self.reg.pc += 1;
+                    2
+                }
+            }
+            0x31 => {
+                self.reg.sp = self.fetchword();
+                3
+            }
+            0x32 => {
+                self.mmu.wb(self.reg.hld(), self.reg.a);
+                2
+            }
+            0x33 => {
+                self.reg.sp = self.reg.sp.wrapping_add(1);
+                2
+            }
+            0x34 => {
+                let a = self.reg.hl();
+                let v = self.mmu.rb(a);
+                let v2 = self.alu_inc(v);
+                self.mmu.wb(a, v2);
+                3
+            }
+            0x35 => {
+                let a = self.reg.hl();
+                let v = self.mmu.rb(a);
+                let v2 = self.alu_dec(v);
+                self.mmu.wb(a, v2);
+                3
+            }
+            0x36 => {
+                let v = self.fetchbyte();
+                self.mmu.wb(self.reg.hl(), v);
+                3
+            }
+            0x37 => {
+                self.reg.flag(C, true);
+                self.reg.flag(H, false);
+                self.reg.flag(N, false);
+                1
+            }
+            0x38 => {
+                if self.reg.getflag(C) {
+                    self.cpu_jr();
+                    3
+                } else {
+                    self.reg.pc += 1;
+                    2
+                }
+            }
+            0x39 => {
+                self.alu_add16(self.reg.sp);
+                2
+            }
+            0x3A => {
+                self.reg.a = self.mmu.rb(self.reg.hld());
+                2
+            }
+            0x3B => {
+                self.reg.sp = self.reg.sp.wrapping_sub(1);
+                2
+            }
+            0x3C => {
+                self.reg.a = self.alu_inc(self.reg.a);
+                1
+            }
+            0x3D => {
+                self.reg.a = self.alu_dec(self.reg.a);
+                1
+            }
+            0x3E => {
+                self.reg.a = self.fetchbyte();
+                2
+            }
+            0x3F => {
+                let v = !self.reg.getflag(C);
+                self.reg.flag(C, v);
+                self.reg.flag(H, false);
+                self.reg.flag(N, false);
+                1
+            }
+            0x40 => 1,
+            0x41 => {
+                self.reg.b = self.reg.c;
+                1
+            }
+            0x42 => {
+                self.reg.b = self.reg.d;
+                1
+            }
+            0x43 => {
+                self.reg.b = self.reg.e;
+                1
+            }
+            0x44 => {
+                self.reg.b = self.reg.h;
+                1
+            }
+            0x45 => {
+                self.reg.b = self.reg.l;
+                1
+            }
+            0x46 => {
+                self.reg.b = self.mmu.rb(self.reg.hl());
+                2
+            }
+            0x47 => {
+                self.reg.b = self.reg.a;
+                1
+            }
+            0x48 => {
+                self.reg.c = self.reg.b;
+                1
+            }
+            0x49 => 1,
+            0x4A => {
+                self.reg.c = self.reg.d;
+                1
+            }
+            0x4B => {
+                self.reg.c = self.reg.e;
+                1
+            }
+            0x4C => {
+                self.reg.c = self.reg.h;
+                1
+            }
+            0x4D => {
+                self.reg.c = self.reg.l;
+                1
+            }
+            0x4E => {
+                self.reg.c = self.mmu.rb(self.reg.hl());
+                2
+            }
+            0x4F => {
+                self.reg.c = self.reg.a;
+                1
+            }
+            0x50 => {
+                self.reg.d = self.reg.b;
+                1
+            }
+            0x51 => {
+                self.reg.d = self.reg.c;
+                1
+            }
+            0x52 => 1,
+            0x53 => {
+                self.reg.d = self.reg.e;
+                1
+            }
+            0x54 => {
+                self.reg.d = self.reg.h;
+                1
+            }
+            0x55 => {
+                self.reg.d = self.reg.l;
+                1
+            }
+            0x56 => {
+                self.reg.d = self.mmu.rb(self.reg.hl());
+                2
+            }
+            0x57 => {
+                self.reg.d = self.reg.a;
+                1
+            }
+            0x58 => {
+                self.reg.e = self.reg.b;
+                1
+            }
+            0x59 => {
+                self.reg.e = self.reg.c;
+                1
+            }
+            0x5A => {
+                self.reg.e = self.reg.d;
+                1
+            }
+            0x5B => 1,
+            0x5C => {
+                self.reg.e = self.reg.h;
+                1
+            }
+            0x5D => {
+                self.reg.e = self.reg.l;
+                1
+            }
+            0x5E => {
+                self.reg.e = self.mmu.rb(self.reg.hl());
+                2
+            }
+            0x5F => {
+                self.reg.e = self.reg.a;
+                1
+            }
+            0x60 => {
+                self.reg.h = self.reg.b;
+                1
+            }
+            0x61 => {
+                self.reg.h = self.reg.c;
+                1
+            }
+            0x62 => {
+                self.reg.h = self.reg.d;
+                1
+            }
+            0x63 => {
+                self.reg.h = self.reg.e;
+                1
+            }
+            0x64 => 1,
+            0x65 => {
+                self.reg.h = self.reg.l;
+                1
+            }
+            0x66 => {
+                self.reg.h = self.mmu.rb(self.reg.hl());
+                2
+            }
+            0x67 => {
+                self.reg.h = self.reg.a;
+                1
+            }
+            0x68 => {
+                self.reg.l = self.reg.b;
+                1
+            }
+            0x69 => {
+                self.reg.l = self.reg.c;
+                1
+            }
+            0x6A => {
+                self.reg.l = self.reg.d;
+                1
+            }
+            0x6B => {
+                self.reg.l = self.reg.e;
+                1
+            }
+            0x6C => {
+                self.reg.l = self.reg.h;
+                1
+            }
+            0x6D => 1,
+            0x6E => {
+                self.reg.l = self.mmu.rb(self.reg.hl());
+                2
+            }
+            0x6F => {
+                self.reg.l = self.reg.a;
+                1
+            }
+            0x70 => {
+                self.mmu.wb(self.reg.hl(), self.reg.b);
+                2
+            }
+            0x71 => {
+                self.mmu.wb(self.reg.hl(), self.reg.c);
+                2
+            }
+            0x72 => {
+                self.mmu.wb(self.reg.hl(), self.reg.d);
+                2
+            }
+            0x73 => {
+                self.mmu.wb(self.reg.hl(), self.reg.e);
+                2
+            }
+            0x74 => {
+                self.mmu.wb(self.reg.hl(), self.reg.h);
+                2
+            }
+            0x75 => {
+                self.mmu.wb(self.reg.hl(), self.reg.l);
+                2
+            }
+            0x76 => {
+                self.halted = true;
+                self.halt_bug = (self.mmu.read_if() & self.mmu.read_ie() & 0x1F) != 0;
+                1
+            }
+            0x77 => {
+                self.mmu.wb(self.reg.hl(), self.reg.a);
+                2
+            }
+            0x78 => {
+                self.reg.a = self.reg.b;
+                1
+            }
+            0x79 => {
+                self.reg.a = self.reg.c;
+                1
+            }
+            0x7A => {
+                self.reg.a = self.reg.d;
+                1
+            }
+            0x7B => {
+                self.reg.a = self.reg.e;
+                1
+            }
+            0x7C => {
+                self.reg.a = self.reg.h;
+                1
+            }
+            0x7D => {
+                self.reg.a = self.reg.l;
+                1
+            }
+            0x7E => {
+                self.reg.a = self.mmu.rb(self.reg.hl());
+                2
+            }
+            0x7F => 1,
+            0x80 => {
+                self.alu_add(self.reg.b, false);
+                1
+            }
+            0x81 => {
+                self.alu_add(self.reg.c, false);
+                1
+            }
+            0x82 => {
+                self.alu_add(self.reg.d, false);
+                1
+            }
+            0x83 => {
+                self.alu_add(self.reg.e, false);
+                1
+            }
+            0x84 => {
+                self.alu_add(self.reg.h, false);
+                1
+            }
+            0x85 => {
+                self.alu_add(self.reg.l, false);
+                1
+            }
+            0x86 => {
+                let v = self.mmu.rb(self.reg.hl());
+                self.alu_add(v, false);
+                2
+            }
+            0x87 => {
+                self.alu_add(self.reg.a, false);
+                1
+            }
+            0x88 => {
+                self.alu_add(self.reg.b, true);
+                1
+            }
+            0x89 => {
+                self.alu_add(self.reg.c, true);
+                1
+            }
+            0x8A => {
+                self.alu_add(self.reg.d, true);
+                1
+            }
+            0x8B => {
+                self.alu_add(self.reg.e, true);
+                1
+            }
+            0x8C => {
+                self.alu_add(self.reg.h, true);
+                1
+            }
+            0x8D => {
+                self.alu_add(self.reg.l, true);
+                1
+            }
+            0x8E => {
+                let v = self.mmu.rb(self.reg.hl());
+                self.alu_add(v, true);
+                2
+            }
+            0x8F => {
+                self.alu_add(self.reg.a, true);
+                1
+            }
+            0x90 => {
+                self.alu_sub(self.reg.b, false);
+                1
+            }
+            0x91 => {
+                self.alu_sub(self.reg.c, false);
+                1
+            }
+            0x92 => {
+                self.alu_sub(self.reg.d, false);
+                1
+            }
+            0x93 => {
+                self.alu_sub(self.reg.e, false);
+                1
+            }
+            0x94 => {
+                self.alu_sub(self.reg.h, false);
+                1
+            }
+            0x95 => {
+                self.alu_sub(self.reg.l, false);
+                1
+            }
+            0x96 => {
+                let v = self.mmu.rb(self.reg.hl());
+                self.alu_sub(v, false);
+                2
+            }
+            0x97 => {
+                self.alu_sub(self.reg.a, false);
+                1
+            }
+            0x98 => {
+                self.alu_sub(self.reg.b, true);
+                1
+            }
+            0x99 => {
+                self.alu_sub(self.reg.c, true);
+                1
+            }
+            0x9A => {
+                self.alu_sub(self.reg.d, true);
+                1
+            }
+            0x9B => {
+                self.alu_sub(self.reg.e, true);
+                1
+            }
+            0x9C => {
+                self.alu_sub(self.reg.h, true);
+                1
+            }
+            0x9D => {
+                self.alu_sub(self.reg.l, true);
+                1
+            }
+            0x9E => {
+                let v = self.mmu.rb(self.reg.hl());
+                self.alu_sub(v, true);
+                2
+            }
+            0x9F => {
+                self.alu_sub(self.reg.a, true);
+                1
+            }
+            0xA0 => {
+                self.alu_and(self.reg.b);
+                1
+            }
+            0xA1 => {
+                self.alu_and(self.reg.c);
+                1
+            }
+            0xA2 => {
+                self.alu_and(self.reg.d);
+                1
+            }
+            0xA3 => {
+                self.alu_and(self.reg.e);
+                1
+            }
+            0xA4 => {
+                self.alu_and(self.reg.h);
+                1
+            }
+            0xA5 => {
+                self.alu_and(self.reg.l);
+                1
+            }
+            0xA6 => {
+                let v = self.mmu.rb(self.reg.hl());
+                self.alu_and(v);
+                2
+            }
+            0xA7 => {
+                self.alu_and(self.reg.a);
+                1
+            }
+            0xA8 => {
+                self.alu_xor(self.reg.b);
+                1
+            }
+            0xA9 => {
+                self.alu_xor(self.reg.c);
+                1
+            }
+            0xAA => {
+                self.alu_xor(self.reg.d);
+                1
+            }
+            0xAB => {
+                self.alu_xor(self.reg.e);
+                1
+            }
+            0xAC => {
+                self.alu_xor(self.reg.h);
+                1
+            }
+            0xAD => {
+                self.alu_xor(self.reg.l);
+                1
+            }
+            0xAE => {
+                let v = self.mmu.rb(self.reg.hl());
+                self.alu_xor(v);
+                2
+            }
+            0xAF => {
+                self.alu_xor(self.reg.a);
+                1
+            }
+            0xB0 => {
+                self.alu_or(self.reg.b);
+                1
+            }
+            0xB1 => {
+                self.alu_or(self.reg.c);
+                1
+            }
+            0xB2 => {
+                self.alu_or(self.reg.d);
+                1
+            }
+            0xB3 => {
+                self.alu_or(self.reg.e);
+                1
+            }
+            0xB4 => {
+                self.alu_or(self.reg.h);
+                1
+            }
+            0xB5 => {
+                self.alu_or(self.reg.l);
+                1
+            }
+            0xB6 => {
+                let v = self.mmu.rb(self.reg.hl());
+                self.alu_or(v);
+                2
+            }
+            0xB7 => {
+                self.alu_or(self.reg.a);
+                1
+            }
+            0xB8 => {
+                self.alu_cp(self.reg.b);
+                1
+            }
+            0xB9 => {
+                self.alu_cp(self.reg.c);
+                1
+            }
+            0xBA => {
+                self.alu_cp(self.reg.d);
+                1
+            }
+            0xBB => {
+                self.alu_cp(self.reg.e);
+                1
+            }
+            0xBC => {
+                self.alu_cp(self.reg.h);
+                1
+            }
+            0xBD => {
+                self.alu_cp(self.reg.l);
+                1
+            }
+            0xBE => {
+                let v = self.mmu.rb(self.reg.hl());
+                self.alu_cp(v);
+                2
+            }
+            0xBF => {
+                self.alu_cp(self.reg.a);
+                1
+            }
+            0xC0 => {
+                if !self.reg.getflag(Z) {
+                    self.reg.pc = self.popstack();
+                    5
+                } else {
+                    2
+                }
+            }
+            0xC1 => {
+                let v = self.popstack();
+                self.reg.setbc(v);
+                3
+            }
+            0xC2 => {
+                if !self.reg.getflag(Z) {
+                    self.reg.pc = self.fetchword();
+                    4
+                } else {
+                    self.reg.pc += 2;
+                    3
+                }
+            }
+            0xC3 => {
+                self.reg.pc = self.fetchword();
+                4
+            }
+            0xC4 => {
+                if !self.reg.getflag(Z) {
+                    self.pushstack(self.reg.pc + 2);
+                    self.reg.pc = self.fetchword();
+                    6
+                } else {
+                    self.reg.pc += 2;
+                    3
+                }
+            }
+            0xC5 => {
+                self.pushstack(self.reg.bc());
+                4
+            }
+            0xC6 => {
+                let v = self.fetchbyte();
+                self.alu_add(v, false);
+                2
+            }
+            0xC7 => {
+                self.pushstack(self.reg.pc);
+                self.reg.pc = 0x00;
+                4
+            }
+            0xC8 => {
+                if self.reg.getflag(Z) {
+                    self.reg.pc = self.popstack();
+                    5
+                } else {
+                    2
+                }
+            }
+            0xC9 => {
+                self.reg.pc = self.popstack();
+                4
+            }
+            0xCA => {
+                if self.reg.getflag(Z) {
+                    self.reg.pc = self.fetchword();
+                    4
+                } else {
+                    self.reg.pc += 2;
+                    3
+                }
+            }
+            0xCB => self.call_cb(),
+            0xCC => {
+                if self.reg.getflag(Z) {
+                    self.pushstack(self.reg.pc + 2);
+                    self.reg.pc = self.fetchword();
+                    6
+                } else {
+                    self.reg.pc += 2;
+                    3
+                }
+            }
+            0xCD => {
+                self.pushstack(self.reg.pc + 2);
+                self.reg.pc = self.fetchword();
+                6
+            }
+            0xCE => {
+                let v = self.fetchbyte();
+                self.alu_add(v, true);
+                2
+            }
+            0xCF => {
+                self.pushstack(self.reg.pc);
+                self.reg.pc = 0x08;
+                4
+            }
+            0xD0 => {
+                if !self.reg.getflag(C) {
+                    self.reg.pc = self.popstack();
+                    5
+                } else {
+                    2
+                }
+            }
+            0xD1 => {
+                let v = self.popstack();
+                self.reg.setde(v);
+                3
+            }
+            0xD2 => {
+                if !self.reg.getflag(C) {
+                    self.reg.pc = self.fetchword();
+                    4
+                } else {
+                    self.reg.pc += 2;
+                    3
+                }
+            }
+            0xD4 => {
+                if !self.reg.getflag(C) {
+                    self.pushstack(self.reg.pc + 2);
+                    self.reg.pc = self.fetchword();
+                    6
+                } else {
+                    self.reg.pc += 2;
+                    3
+                }
+            }
+            0xD5 => {
+                self.pushstack(self.reg.de());
+                4
+            }
+            0xD6 => {
+                let v = self.fetchbyte();
+                self.alu_sub(v, false);
+                2
+            }
+            0xD7 => {
+                self.pushstack(self.reg.pc);
+                self.reg.pc = 0x10;
+                4
+            }
+            0xD8 => {
+                if self.reg.getflag(C) {
+                    self.reg.pc = self.popstack();
+                    5
+                } else {
+                    2
+                }
+            }
+            0xD9 => {
+                self.reg.pc = self.popstack();
+                self.setei = 1;
+                4
+            }
+            0xDA => {
+                if self.reg.getflag(C) {
+                    self.reg.pc = self.fetchword();
+                    4
+                } else {
+                    self.reg.pc += 2;
+                    3
+                }
+            }
+            0xDC => {
+                if self.reg.getflag(C) {
+                    self.pushstack(self.reg.pc + 2);
+                    self.reg.pc = self.fetchword();
+                    6
+                } else {
+                    self.reg.pc += 2;
+                    3
+                }
+            }
+            0xDE => {
+                let v = self.fetchbyte();
+                self.alu_sub(v, true);
+                2
+            }
+            0xDF => {
+                self.pushstack(self.reg.pc);
+                self.reg.pc = 0x18;
+                4
+            }
+            0xE0 => {
+                let a = 0xFF00 | self.fetchbyte() as u16;
+                self.mmu.wb(a, self.reg.a);
+                3
+            }
+            0xE1 => {
+                let v = self.popstack();
+                self.reg.sethl(v);
+                3
+            }
+            0xE2 => {
+                self.mmu.wb(0xFF00 | self.reg.c as u16, self.reg.a);
+                2
+            }
+            0xE5 => {
+                self.pushstack(self.reg.hl());
+                4
+            }
+            0xE6 => {
+                let v = self.fetchbyte();
+                self.alu_and(v);
+                2
+            }
+            0xE7 => {
+                self.pushstack(self.reg.pc);
+                self.reg.pc = 0x20;
+                4
+            }
+            0xE8 => {
+                self.reg.sp = self.alu_add16imm(self.reg.sp);
+                4
+            }
+            0xE9 => {
+                self.reg.pc = self.reg.hl();
+                1
+            }
+            0xEA => {
+                let a = self.fetchword();
+                self.mmu.wb(a, self.reg.a);
+                4
+            }
+            0xEE => {
+                let v = self.fetchbyte();
+                self.alu_xor(v);
+                2
+            }
+            0xEF => {
+                self.pushstack(self.reg.pc);
+                self.reg.pc = 0x28;
+                4
+            }
+            0xF0 => {
+                let a = 0xFF00 | self.fetchbyte() as u16;
+                self.reg.a = self.mmu.rb(a);
+                3
+            }
+            0xF1 => {
+                let v = self.popstack() & 0xFFF0;
+                self.reg.setaf(v);
+                3
+            }
+            0xF2 => {
+                self.reg.a = self.mmu.rb(0xFF00 | self.reg.c as u16);
+                2
+            }
+            0xF3 => {
+                self.setdi = 2;
+                1
+            }
+            0xF5 => {
+                self.pushstack(self.reg.af());
+                4
+            }
+            0xF6 => {
+                let v = self.fetchbyte();
+                self.alu_or(v);
+                2
+            }
+            0xF7 => {
+                self.pushstack(self.reg.pc);
+                self.reg.pc = 0x30;
+                4
+            }
+            0xF8 => {
+                let r = self.alu_add16imm(self.reg.sp);
+                self.reg.sethl(r);
+                3
+            }
+            0xF9 => {
+                self.reg.sp = self.reg.hl();
+                2
+            }
+            0xFA => {
+                let a = self.fetchword();
+                self.reg.a = self.mmu.rb(a);
+                4
+            }
+            0xFB => {
+                self.setei = 2;
+                1
+            }
+            0xFE => {
+                let v = self.fetchbyte();
+                self.alu_cp(v);
+                2
+            }
+            0xFF => {
+                self.pushstack(self.reg.pc);
+                self.reg.pc = 0x38;
+                4
+            }
+            other => panic!("Instruction {:2X} is not implemented", other),
+        }
     }
 
-     #[inline(always)]
-    #[cfg_attr(rustfmt, rustfmt_skip)]
-    pub fn ibit(&mut self, val: Byte, mask: Byte) {
-    // special version of the BIT instruction for
-    // (HL), (IX+d), (IY+d) to set the undocumented XF|YF flags
-    // from high byte of HL+1 or IX/IY+d (expected in WZ)
-        let res = val & mask;
-        let f = HF | (self.registers.val_f() & CF) | (if res == 0 {ZF | PF} else {res & SF}) |
-            (self.registers.val_w() & (XF | YF));
-        self.registers.set_f(f)
+    fn call_cb(&mut self) -> u32 {
+        let opcode = self.fetchbyte();
+        match opcode {
+            0x00 => {
+                self.reg.b = self.alu_rlc(self.reg.b);
+                2
+            }
+            0x01 => {
+                self.reg.c = self.alu_rlc(self.reg.c);
+                2
+            }
+            0x02 => {
+                self.reg.d = self.alu_rlc(self.reg.d);
+                2
+            }
+            0x03 => {
+                self.reg.e = self.alu_rlc(self.reg.e);
+                2
+            }
+            0x04 => {
+                self.reg.h = self.alu_rlc(self.reg.h);
+                2
+            }
+            0x05 => {
+                self.reg.l = self.alu_rlc(self.reg.l);
+                2
+            }
+            0x06 => {
+                let a = self.reg.hl();
+                let v = self.mmu.rb(a);
+                let v2 = self.alu_rlc(v);
+                self.mmu.wb(a, v2);
+                4
+            }
+            0x07 => {
+                self.reg.a = self.alu_rlc(self.reg.a);
+                2
+            }
+            0x08 => {
+                self.reg.b = self.alu_rrc(self.reg.b);
+                2
+            }
+            0x09 => {
+                self.reg.c = self.alu_rrc(self.reg.c);
+                2
+            }
+            0x0A => {
+                self.reg.d = self.alu_rrc(self.reg.d);
+                2
+            }
+            0x0B => {
+                self.reg.e = self.alu_rrc(self.reg.e);
+                2
+            }
+            0x0C => {
+                self.reg.h = self.alu_rrc(self.reg.h);
+                2
+            }
+            0x0D => {
+                self.reg.l = self.alu_rrc(self.reg.l);
+                2
+            }
+            0x0E => {
+                let a = self.reg.hl();
+                let v = self.mmu.rb(a);
+                let v2 = self.alu_rrc(v);
+                self.mmu.wb(a, v2);
+                4
+            }
+            0x0F => {
+                self.reg.a = self.alu_rrc(self.reg.a);
+                2
+            }
+            0x10 => {
+                self.reg.b = self.alu_rl(self.reg.b);
+                2
+            }
+            0x11 => {
+                self.reg.c = self.alu_rl(self.reg.c);
+                2
+            }
+            0x12 => {
+                self.reg.d = self.alu_rl(self.reg.d);
+                2
+            }
+            0x13 => {
+                self.reg.e = self.alu_rl(self.reg.e);
+                2
+            }
+            0x14 => {
+                self.reg.h = self.alu_rl(self.reg.h);
+                2
+            }
+            0x15 => {
+                self.reg.l = self.alu_rl(self.reg.l);
+                2
+            }
+            0x16 => {
+                let a = self.reg.hl();
+                let v = self.mmu.rb(a);
+                let v2 = self.alu_rl(v);
+                self.mmu.wb(a, v2);
+                4
+            }
+            0x17 => {
+                self.reg.a = self.alu_rl(self.reg.a);
+                2
+            }
+            0x18 => {
+                self.reg.b = self.alu_rr(self.reg.b);
+                2
+            }
+            0x19 => {
+                self.reg.c = self.alu_rr(self.reg.c);
+                2
+            }
+            0x1A => {
+                self.reg.d = self.alu_rr(self.reg.d);
+                2
+            }
+            0x1B => {
+                self.reg.e = self.alu_rr(self.reg.e);
+                2
+            }
+            0x1C => {
+                self.reg.h = self.alu_rr(self.reg.h);
+                2
+            }
+            0x1D => {
+                self.reg.l = self.alu_rr(self.reg.l);
+                2
+            }
+            0x1E => {
+                let a = self.reg.hl();
+                let v = self.mmu.rb(a);
+                let v2 = self.alu_rr(v);
+                self.mmu.wb(a, v2);
+                4
+            }
+            0x1F => {
+                self.reg.a = self.alu_rr(self.reg.a);
+                2
+            }
+            0x20 => {
+                self.reg.b = self.alu_sla(self.reg.b);
+                2
+            }
+            0x21 => {
+                self.reg.c = self.alu_sla(self.reg.c);
+                2
+            }
+            0x22 => {
+                self.reg.d = self.alu_sla(self.reg.d);
+                2
+            }
+            0x23 => {
+                self.reg.e = self.alu_sla(self.reg.e);
+                2
+            }
+            0x24 => {
+                self.reg.h = self.alu_sla(self.reg.h);
+                2
+            }
+            0x25 => {
+                self.reg.l = self.alu_sla(self.reg.l);
+                2
+            }
+            0x26 => {
+                let a = self.reg.hl();
+                let v = self.mmu.rb(a);
+                let v2 = self.alu_sla(v);
+                self.mmu.wb(a, v2);
+                4
+            }
+            0x27 => {
+                self.reg.a = self.alu_sla(self.reg.a);
+                2
+            }
+            0x28 => {
+                self.reg.b = self.alu_sra(self.reg.b);
+                2
+            }
+            0x29 => {
+                self.reg.c = self.alu_sra(self.reg.c);
+                2
+            }
+            0x2A => {
+                self.reg.d = self.alu_sra(self.reg.d);
+                2
+            }
+            0x2B => {
+                self.reg.e = self.alu_sra(self.reg.e);
+                2
+            }
+            0x2C => {
+                self.reg.h = self.alu_sra(self.reg.h);
+                2
+            }
+            0x2D => {
+                self.reg.l = self.alu_sra(self.reg.l);
+                2
+            }
+            0x2E => {
+                let a = self.reg.hl();
+                let v = self.mmu.rb(a);
+                let v2 = self.alu_sra(v);
+                self.mmu.wb(a, v2);
+                4
+            }
+            0x2F => {
+                self.reg.a = self.alu_sra(self.reg.a);
+                2
+            }
+            0x30 => {
+                self.reg.b = self.alu_swap(self.reg.b);
+                2
+            }
+            0x31 => {
+                self.reg.c = self.alu_swap(self.reg.c);
+                2
+            }
+            0x32 => {
+                self.reg.d = self.alu_swap(self.reg.d);
+                2
+            }
+            0x33 => {
+                self.reg.e = self.alu_swap(self.reg.e);
+                2
+            }
+            0x34 => {
+                self.reg.h = self.alu_swap(self.reg.h);
+                2
+            }
+            0x35 => {
+                self.reg.l = self.alu_swap(self.reg.l);
+                2
+            }
+            0x36 => {
+                let a = self.reg.hl();
+                let v = self.mmu.rb(a);
+                let v2 = self.alu_swap(v);
+                self.mmu.wb(a, v2);
+                4
+            }
+            0x37 => {
+                self.reg.a = self.alu_swap(self.reg.a);
+                2
+            }
+            0x38 => {
+                self.reg.b = self.alu_srl(self.reg.b);
+                2
+            }
+            0x39 => {
+                self.reg.c = self.alu_srl(self.reg.c);
+                2
+            }
+            0x3A => {
+                self.reg.d = self.alu_srl(self.reg.d);
+                2
+            }
+            0x3B => {
+                self.reg.e = self.alu_srl(self.reg.e);
+                2
+            }
+            0x3C => {
+                self.reg.h = self.alu_srl(self.reg.h);
+                2
+            }
+            0x3D => {
+                self.reg.l = self.alu_srl(self.reg.l);
+                2
+            }
+            0x3E => {
+                let a = self.reg.hl();
+                let v = self.mmu.rb(a);
+                let v2 = self.alu_srl(v);
+                self.mmu.wb(a, v2);
+                4
+            }
+            0x3F => {
+                self.reg.a = self.alu_srl(self.reg.a);
+                2
+            }
+            0x40 => {
+                self.alu_bit(self.reg.b, 0);
+                2
+            }
+            0x41 => {
+                self.alu_bit(self.reg.c, 0);
+                2
+            }
+            0x42 => {
+                self.alu_bit(self.reg.d, 0);
+                2
+            }
+            0x43 => {
+                self.alu_bit(self.reg.e, 0);
+                2
+            }
+            0x44 => {
+                self.alu_bit(self.reg.h, 0);
+                2
+            }
+            0x45 => {
+                self.alu_bit(self.reg.l, 0);
+                2
+            }
+            0x46 => {
+                let v = self.mmu.rb(self.reg.hl());
+                self.alu_bit(v, 0);
+                3
+            }
+            0x47 => {
+                self.alu_bit(self.reg.a, 0);
+                2
+            }
+            0x48 => {
+                self.alu_bit(self.reg.b, 1);
+                2
+            }
+            0x49 => {
+                self.alu_bit(self.reg.c, 1);
+                2
+            }
+            0x4A => {
+                self.alu_bit(self.reg.d, 1);
+                2
+            }
+            0x4B => {
+                self.alu_bit(self.reg.e, 1);
+                2
+            }
+            0x4C => {
+                self.alu_bit(self.reg.h, 1);
+                2
+            }
+            0x4D => {
+                self.alu_bit(self.reg.l, 1);
+                2
+            }
+            0x4E => {
+                let v = self.mmu.rb(self.reg.hl());
+                self.alu_bit(v, 1);
+                3
+            }
+            0x4F => {
+                self.alu_bit(self.reg.a, 1);
+                2
+            }
+            0x50 => {
+                self.alu_bit(self.reg.b, 2);
+                2
+            }
+            0x51 => {
+                self.alu_bit(self.reg.c, 2);
+                2
+            }
+            0x52 => {
+                self.alu_bit(self.reg.d, 2);
+                2
+            }
+            0x53 => {
+                self.alu_bit(self.reg.e, 2);
+                2
+            }
+            0x54 => {
+                self.alu_bit(self.reg.h, 2);
+                2
+            }
+            0x55 => {
+                self.alu_bit(self.reg.l, 2);
+                2
+            }
+            0x56 => {
+                let v = self.mmu.rb(self.reg.hl());
+                self.alu_bit(v, 2);
+                3
+            }
+            0x57 => {
+                self.alu_bit(self.reg.a, 2);
+                2
+            }
+            0x58 => {
+                self.alu_bit(self.reg.b, 3);
+                2
+            }
+            0x59 => {
+                self.alu_bit(self.reg.c, 3);
+                2
+            }
+            0x5A => {
+                self.alu_bit(self.reg.d, 3);
+                2
+            }
+            0x5B => {
+                self.alu_bit(self.reg.e, 3);
+                2
+            }
+            0x5C => {
+                self.alu_bit(self.reg.h, 3);
+                2
+            }
+            0x5D => {
+                self.alu_bit(self.reg.l, 3);
+                2
+            }
+            0x5E => {
+                let v = self.mmu.rb(self.reg.hl());
+                self.alu_bit(v, 3);
+                3
+            }
+            0x5F => {
+                self.alu_bit(self.reg.a, 3);
+                2
+            }
+            0x60 => {
+                self.alu_bit(self.reg.b, 4);
+                2
+            }
+            0x61 => {
+                self.alu_bit(self.reg.c, 4);
+                2
+            }
+            0x62 => {
+                self.alu_bit(self.reg.d, 4);
+                2
+            }
+            0x63 => {
+                self.alu_bit(self.reg.e, 4);
+                2
+            }
+            0x64 => {
+                self.alu_bit(self.reg.h, 4);
+                2
+            }
+            0x65 => {
+                self.alu_bit(self.reg.l, 4);
+                2
+            }
+            0x66 => {
+                let v = self.mmu.rb(self.reg.hl());
+                self.alu_bit(v, 4);
+                3
+            }
+            0x67 => {
+                self.alu_bit(self.reg.a, 4);
+                2
+            }
+            0x68 => {
+                self.alu_bit(self.reg.b, 5);
+                2
+            }
+            0x69 => {
+                self.alu_bit(self.reg.c, 5);
+                2
+            }
+            0x6A => {
+                self.alu_bit(self.reg.d, 5);
+                2
+            }
+            0x6B => {
+                self.alu_bit(self.reg.e, 5);
+                2
+            }
+            0x6C => {
+                self.alu_bit(self.reg.h, 5);
+                2
+            }
+            0x6D => {
+                self.alu_bit(self.reg.l, 5);
+                2
+            }
+            0x6E => {
+                let v = self.mmu.rb(self.reg.hl());
+                self.alu_bit(v, 5);
+                3
+            }
+            0x6F => {
+                self.alu_bit(self.reg.a, 5);
+                2
+            }
+            0x70 => {
+                self.alu_bit(self.reg.b, 6);
+                2
+            }
+            0x71 => {
+                self.alu_bit(self.reg.c, 6);
+                2
+            }
+            0x72 => {
+                self.alu_bit(self.reg.d, 6);
+                2
+            }
+            0x73 => {
+                self.alu_bit(self.reg.e, 6);
+                2
+            }
+            0x74 => {
+                self.alu_bit(self.reg.h, 6);
+                2
+            }
+            0x75 => {
+                self.alu_bit(self.reg.l, 6);
+                2
+            }
+            0x76 => {
+                let v = self.mmu.rb(self.reg.hl());
+                self.alu_bit(v, 6);
+                3
+            }
+            0x77 => {
+                self.alu_bit(self.reg.a, 6);
+                2
+            }
+            0x78 => {
+                self.alu_bit(self.reg.b, 7);
+                2
+            }
+            0x79 => {
+                self.alu_bit(self.reg.c, 7);
+                2
+            }
+            0x7A => {
+                self.alu_bit(self.reg.d, 7);
+                2
+            }
+            0x7B => {
+                self.alu_bit(self.reg.e, 7);
+                2
+            }
+            0x7C => {
+                self.alu_bit(self.reg.h, 7);
+                2
+            }
+            0x7D => {
+                self.alu_bit(self.reg.l, 7);
+                2
+            }
+            0x7E => {
+                let v = self.mmu.rb(self.reg.hl());
+                self.alu_bit(v, 7);
+                3
+            }
+            0x7F => {
+                self.alu_bit(self.reg.a, 7);
+                2
+            }
+            0x80 => {
+                self.reg.b = self.reg.b & !(1 << 0);
+                2
+            }
+            0x81 => {
+                self.reg.c = self.reg.c & !(1 << 0);
+                2
+            }
+            0x82 => {
+                self.reg.d = self.reg.d & !(1 << 0);
+                2
+            }
+            0x83 => {
+                self.reg.e = self.reg.e & !(1 << 0);
+                2
+            }
+            0x84 => {
+                self.reg.h = self.reg.h & !(1 << 0);
+                2
+            }
+            0x85 => {
+                self.reg.l = self.reg.l & !(1 << 0);
+                2
+            }
+            0x86 => {
+                let a = self.reg.hl();
+                let v = self.mmu.rb(a) & !(1 << 0);
+                self.mmu.wb(a, v);
+                4
+            }
+            0x87 => {
+                self.reg.a = self.reg.a & !(1 << 0);
+                2
+            }
+            0x88 => {
+                self.reg.b = self.reg.b & !(1 << 1);
+                2
+            }
+            0x89 => {
+                self.reg.c = self.reg.c & !(1 << 1);
+                2
+            }
+            0x8A => {
+                self.reg.d = self.reg.d & !(1 << 1);
+                2
+            }
+            0x8B => {
+                self.reg.e = self.reg.e & !(1 << 1);
+                2
+            }
+            0x8C => {
+                self.reg.h = self.reg.h & !(1 << 1);
+                2
+            }
+            0x8D => {
+                self.reg.l = self.reg.l & !(1 << 1);
+                2
+            }
+            0x8E => {
+                let a = self.reg.hl();
+                let v = self.mmu.rb(a) & !(1 << 1);
+                self.mmu.wb(a, v);
+                4
+            }
+            0x8F => {
+                self.reg.a = self.reg.a & !(1 << 1);
+                2
+            }
+            0x90 => {
+                self.reg.b = self.reg.b & !(1 << 2);
+                2
+            }
+            0x91 => {
+                self.reg.c = self.reg.c & !(1 << 2);
+                2
+            }
+            0x92 => {
+                self.reg.d = self.reg.d & !(1 << 2);
+                2
+            }
+            0x93 => {
+                self.reg.e = self.reg.e & !(1 << 2);
+                2
+            }
+            0x94 => {
+                self.reg.h = self.reg.h & !(1 << 2);
+                2
+            }
+            0x95 => {
+                self.reg.l = self.reg.l & !(1 << 2);
+                2
+            }
+            0x96 => {
+                let a = self.reg.hl();
+                let v = self.mmu.rb(a) & !(1 << 2);
+                self.mmu.wb(a, v);
+                4
+            }
+            0x97 => {
+                self.reg.a = self.reg.a & !(1 << 2);
+                2
+            }
+            0x98 => {
+                self.reg.b = self.reg.b & !(1 << 3);
+                2
+            }
+            0x99 => {
+                self.reg.c = self.reg.c & !(1 << 3);
+                2
+            }
+            0x9A => {
+                self.reg.d = self.reg.d & !(1 << 3);
+                2
+            }
+            0x9B => {
+                self.reg.e = self.reg.e & !(1 << 3);
+                2
+            }
+            0x9C => {
+                self.reg.h = self.reg.h & !(1 << 3);
+                2
+            }
+            0x9D => {
+                self.reg.l = self.reg.l & !(1 << 3);
+                2
+            }
+            0x9E => {
+                let a = self.reg.hl();
+                let v = self.mmu.rb(a) & !(1 << 3);
+                self.mmu.wb(a, v);
+                4
+            }
+            0x9F => {
+                self.reg.a = self.reg.a & !(1 << 3);
+                2
+            }
+            0xA0 => {
+                self.reg.b = self.reg.b & !(1 << 4);
+                2
+            }
+            0xA1 => {
+                self.reg.c = self.reg.c & !(1 << 4);
+                2
+            }
+            0xA2 => {
+                self.reg.d = self.reg.d & !(1 << 4);
+                2
+            }
+            0xA3 => {
+                self.reg.e = self.reg.e & !(1 << 4);
+                2
+            }
+            0xA4 => {
+                self.reg.h = self.reg.h & !(1 << 4);
+                2
+            }
+            0xA5 => {
+                self.reg.l = self.reg.l & !(1 << 4);
+                2
+            }
+            0xA6 => {
+                let a = self.reg.hl();
+                let v = self.mmu.rb(a) & !(1 << 4);
+                self.mmu.wb(a, v);
+                4
+            }
+            0xA7 => {
+                self.reg.a = self.reg.a & !(1 << 4);
+                2
+            }
+            0xA8 => {
+                self.reg.b = self.reg.b & !(1 << 5);
+                2
+            }
+            0xA9 => {
+                self.reg.c = self.reg.c & !(1 << 5);
+                2
+            }
+            0xAA => {
+                self.reg.d = self.reg.d & !(1 << 5);
+                2
+            }
+            0xAB => {
+                self.reg.e = self.reg.e & !(1 << 5);
+                2
+            }
+            0xAC => {
+                self.reg.h = self.reg.h & !(1 << 5);
+                2
+            }
+            0xAD => {
+                self.reg.l = self.reg.l & !(1 << 5);
+                2
+            }
+            0xAE => {
+                let a = self.reg.hl();
+                let v = self.mmu.rb(a) & !(1 << 5);
+                self.mmu.wb(a, v);
+                4
+            }
+            0xAF => {
+                self.reg.a = self.reg.a & !(1 << 5);
+                2
+            }
+            0xB0 => {
+                self.reg.b = self.reg.b & !(1 << 6);
+                2
+            }
+            0xB1 => {
+                self.reg.c = self.reg.c & !(1 << 6);
+                2
+            }
+            0xB2 => {
+                self.reg.d = self.reg.d & !(1 << 6);
+                2
+            }
+            0xB3 => {
+                self.reg.e = self.reg.e & !(1 << 6);
+                2
+            }
+            0xB4 => {
+                self.reg.h = self.reg.h & !(1 << 6);
+                2
+            }
+            0xB5 => {
+                self.reg.l = self.reg.l & !(1 << 6);
+                2
+            }
+            0xB6 => {
+                let a = self.reg.hl();
+                let v = self.mmu.rb(a) & !(1 << 6);
+                self.mmu.wb(a, v);
+                4
+            }
+            0xB7 => {
+                self.reg.a = self.reg.a & !(1 << 6);
+                2
+            }
+            0xB8 => {
+                self.reg.b = self.reg.b & !(1 << 7);
+                2
+            }
+            0xB9 => {
+                self.reg.c = self.reg.c & !(1 << 7);
+                2
+            }
+            0xBA => {
+                self.reg.d = self.reg.d & !(1 << 7);
+                2
+            }
+            0xBB => {
+                self.reg.e = self.reg.e & !(1 << 7);
+                2
+            }
+            0xBC => {
+                self.reg.h = self.reg.h & !(1 << 7);
+                2
+            }
+            0xBD => {
+                self.reg.l = self.reg.l & !(1 << 7);
+                2
+            }
+            0xBE => {
+                let a = self.reg.hl();
+                let v = self.mmu.rb(a) & !(1 << 7);
+                self.mmu.wb(a, v);
+                4
+            }
+            0xBF => {
+                self.reg.a = self.reg.a & !(1 << 7);
+                2
+            }
+            0xC0 => {
+                self.reg.b = self.reg.b | (1 << 0);
+                2
+            }
+            0xC1 => {
+                self.reg.c = self.reg.c | (1 << 0);
+                2
+            }
+            0xC2 => {
+                self.reg.d = self.reg.d | (1 << 0);
+                2
+            }
+            0xC3 => {
+                self.reg.e = self.reg.e | (1 << 0);
+                2
+            }
+            0xC4 => {
+                self.reg.h = self.reg.h | (1 << 0);
+                2
+            }
+            0xC5 => {
+                self.reg.l = self.reg.l | (1 << 0);
+                2
+            }
+            0xC6 => {
+                let a = self.reg.hl();
+                let v = self.mmu.rb(a) | (1 << 0);
+                self.mmu.wb(a, v);
+                4
+            }
+            0xC7 => {
+                self.reg.a = self.reg.a | (1 << 0);
+                2
+            }
+            0xC8 => {
+                self.reg.b = self.reg.b | (1 << 1);
+                2
+            }
+            0xC9 => {
+                self.reg.c = self.reg.c | (1 << 1);
+                2
+            }
+            0xCA => {
+                self.reg.d = self.reg.d | (1 << 1);
+                2
+            }
+            0xCB => {
+                self.reg.e = self.reg.e | (1 << 1);
+                2
+            }
+            0xCC => {
+                self.reg.h = self.reg.h | (1 << 1);
+                2
+            }
+            0xCD => {
+                self.reg.l = self.reg.l | (1 << 1);
+                2
+            }
+            0xCE => {
+                let a = self.reg.hl();
+                let v = self.mmu.rb(a) | (1 << 1);
+                self.mmu.wb(a, v);
+                4
+            }
+            0xCF => {
+                self.reg.a = self.reg.a | (1 << 1);
+                2
+            }
+            0xD0 => {
+                self.reg.b = self.reg.b | (1 << 2);
+                2
+            }
+            0xD1 => {
+                self.reg.c = self.reg.c | (1 << 2);
+                2
+            }
+            0xD2 => {
+                self.reg.d = self.reg.d | (1 << 2);
+                2
+            }
+            0xD3 => {
+                self.reg.e = self.reg.e | (1 << 2);
+                2
+            }
+            0xD4 => {
+                self.reg.h = self.reg.h | (1 << 2);
+                2
+            }
+            0xD5 => {
+                self.reg.l = self.reg.l | (1 << 2);
+                2
+            }
+            0xD6 => {
+                let a = self.reg.hl();
+                let v = self.mmu.rb(a) | (1 << 2);
+                self.mmu.wb(a, v);
+                4
+            }
+            0xD7 => {
+                self.reg.a = self.reg.a | (1 << 2);
+                2
+            }
+            0xD8 => {
+                self.reg.b = self.reg.b | (1 << 3);
+                2
+            }
+            0xD9 => {
+                self.reg.c = self.reg.c | (1 << 3);
+                2
+            }
+            0xDA => {
+                self.reg.d = self.reg.d | (1 << 3);
+                2
+            }
+            0xDB => {
+                self.reg.e = self.reg.e | (1 << 3);
+                2
+            }
+            0xDC => {
+                self.reg.h = self.reg.h | (1 << 3);
+                2
+            }
+            0xDD => {
+                self.reg.l = self.reg.l | (1 << 3);
+                2
+            }
+            0xDE => {
+                let a = self.reg.hl();
+                let v = self.mmu.rb(a) | (1 << 3);
+                self.mmu.wb(a, v);
+                4
+            }
+            0xDF => {
+                self.reg.a = self.reg.a | (1 << 3);
+                2
+            }
+            0xE0 => {
+                self.reg.b = self.reg.b | (1 << 4);
+                2
+            }
+            0xE1 => {
+                self.reg.c = self.reg.c | (1 << 4);
+                2
+            }
+            0xE2 => {
+                self.reg.d = self.reg.d | (1 << 4);
+                2
+            }
+            0xE3 => {
+                self.reg.e = self.reg.e | (1 << 4);
+                2
+            }
+            0xE4 => {
+                self.reg.h = self.reg.h | (1 << 4);
+                2
+            }
+            0xE5 => {
+                self.reg.l = self.reg.l | (1 << 4);
+                2
+            }
+            0xE6 => {
+                let a = self.reg.hl();
+                let v = self.mmu.rb(a) | (1 << 4);
+                self.mmu.wb(a, v);
+                4
+            }
+            0xE7 => {
+                self.reg.a = self.reg.a | (1 << 4);
+                2
+            }
+            0xE8 => {
+                self.reg.b = self.reg.b | (1 << 5);
+                2
+            }
+            0xE9 => {
+                self.reg.c = self.reg.c | (1 << 5);
+                2
+            }
+            0xEA => {
+                self.reg.d = self.reg.d | (1 << 5);
+                2
+            }
+            0xEB => {
+                self.reg.e = self.reg.e | (1 << 5);
+                2
+            }
+            0xEC => {
+                self.reg.h = self.reg.h | (1 << 5);
+                2
+            }
+            0xED => {
+                self.reg.l = self.reg.l | (1 << 5);
+                2
+            }
+            0xEE => {
+                let a = self.reg.hl();
+                let v = self.mmu.rb(a) | (1 << 5);
+                self.mmu.wb(a, v);
+                4
+            }
+            0xEF => {
+                self.reg.a = self.reg.a | (1 << 5);
+                2
+            }
+            0xF0 => {
+                self.reg.b = self.reg.b | (1 << 6);
+                2
+            }
+            0xF1 => {
+                self.reg.c = self.reg.c | (1 << 6);
+                2
+            }
+            0xF2 => {
+                self.reg.d = self.reg.d | (1 << 6);
+                2
+            }
+            0xF3 => {
+                self.reg.e = self.reg.e | (1 << 6);
+                2
+            }
+            0xF4 => {
+                self.reg.h = self.reg.h | (1 << 6);
+                2
+            }
+            0xF5 => {
+                self.reg.l = self.reg.l | (1 << 6);
+                2
+            }
+            0xF6 => {
+                let a = self.reg.hl();
+                let v = self.mmu.rb(a) | (1 << 6);
+                self.mmu.wb(a, v);
+                4
+            }
+            0xF7 => {
+                self.reg.a = self.reg.a | (1 << 6);
+                2
+            }
+            0xF8 => {
+                self.reg.b = self.reg.b | (1 << 7);
+                2
+            }
+            0xF9 => {
+                self.reg.c = self.reg.c | (1 << 7);
+                2
+            }
+            0xFA => {
+                self.reg.d = self.reg.d | (1 << 7);
+                2
+            }
+            0xFB => {
+                self.reg.e = self.reg.e | (1 << 7);
+                2
+            }
+            0xFC => {
+                self.reg.h = self.reg.h | (1 << 7);
+                2
+            }
+            0xFD => {
+                self.reg.l = self.reg.l | (1 << 7);
+                2
+            }
+            0xFE => {
+                let a = self.reg.hl();
+                let v = self.mmu.rb(a) | (1 << 7);
+                self.mmu.wb(a, v);
+                4
+            }
+            0xFF => {
+                self.reg.a = self.reg.a | (1 << 7);
+                2
+            }
+        }
+    }
+
+    fn alu_add(&mut self, b: u8, usec: bool) {
+        let c = if usec && self.reg.getflag(C) { 1 } else { 0 };
+        let a = self.reg.a;
+        let r = a.wrapping_add(b).wrapping_add(c);
+        self.reg.flag(Z, r == 0);
+        self.reg.flag(H, (a & 0xF) + (b & 0xF) + c > 0xF);
+        self.reg.flag(N, false);
+        self.reg
+            .flag(C, (a as u16) + (b as u16) + (c as u16) > 0xFF);
+        self.reg.a = r;
+    }
+
+    fn alu_sub(&mut self, b: u8, usec: bool) {
+        let c = if usec && self.reg.getflag(C) { 1 } else { 0 };
+        let a = self.reg.a;
+        let r = a.wrapping_sub(b).wrapping_sub(c);
+        self.reg.flag(Z, r == 0);
+        self.reg.flag(H, (a & 0x0F) < (b & 0x0F) + c);
+        self.reg.flag(N, true);
+        self.reg.flag(C, (a as u16) < (b as u16) + (c as u16));
+        self.reg.a = r;
+    }
+
+    fn alu_and(&mut self, b: u8) {
+        let r = self.reg.a & b;
+        self.reg.flag(Z, r == 0);
+        self.reg.flag(H, true);
+        self.reg.flag(C, false);
+        self.reg.flag(N, false);
+        self.reg.a = r;
+    }
+
+    fn alu_or(&mut self, b: u8) {
+        let r = self.reg.a | b;
+        self.reg.flag(Z, r == 0);
+        self.reg.flag(C, false);
+        self.reg.flag(H, false);
+        self.reg.flag(N, false);
+        self.reg.a = r;
+    }
+
+    fn alu_xor(&mut self, b: u8) {
+        let r = self.reg.a ^ b;
+        self.reg.flag(Z, r == 0);
+        self.reg.flag(C, false);
+        self.reg.flag(H, false);
+        self.reg.flag(N, false);
+        self.reg.a = r;
+    }
+
+    fn alu_cp(&mut self, b: u8) {
+        let r = self.reg.a;
+        self.alu_sub(b, false);
+        self.reg.a = r;
+    }
+
+    fn alu_inc(&mut self, a: u8) -> u8 {
+        let r = a.wrapping_add(1);
+        self.reg.flag(Z, r == 0);
+        self.reg.flag(H, (a & 0x0F) + 1 > 0x0F);
+        self.reg.flag(N, false);
+        return r;
+    }
+
+    fn alu_dec(&mut self, a: u8) -> u8 {
+        let r = a.wrapping_sub(1);
+        self.reg.flag(Z, r == 0);
+        self.reg.flag(H, (a & 0x0F) == 0);
+        self.reg.flag(N, true);
+        return r;
+    }
+
+    fn alu_add16(&mut self, b: u16) {
+        let a = self.reg.hl();
+        let r = a.wrapping_add(b);
+        self.reg.flag(H, (a & 0x0FFF) + (b & 0x0FFF) > 0x0FFF);
+        self.reg.flag(N, false);
+        self.reg.flag(C, a > 0xFFFF - b);
+        self.reg.sethl(r);
+    }
+
+    fn alu_add16imm(&mut self, a: u16) -> u16 {
+        let b = self.fetchbyte() as i8 as i16 as u16;
+        self.reg.flag(N, false);
+        self.reg.flag(Z, false);
+        self.reg.flag(H, (a & 0x000F) + (b & 0x000F) > 0x000F);
+        self.reg.flag(C, (a & 0x00FF) + (b & 0x00FF) > 0x00FF);
+        return a.wrapping_add(b);
+    }
+
+    fn alu_swap(&mut self, a: u8) -> u8 {
+        self.reg.flag(Z, a == 0);
+        self.reg.flag(C, false);
+        self.reg.flag(H, false);
+        self.reg.flag(N, false);
+        (a >> 4) | (a << 4)
+    }
+
+    fn alu_srflagupdate(&mut self, r: u8, c: bool) {
+        self.reg.flag(H, false);
+        self.reg.flag(N, false);
+        self.reg.flag(Z, r == 0);
+        self.reg.flag(C, c);
+    }
+
+    fn alu_rlc(&mut self, a: u8) -> u8 {
+        let c = a & 0x80 == 0x80;
+        let r = (a << 1) | (if c { 1 } else { 0 });
+        self.alu_srflagupdate(r, c);
+        return r;
+    }
+
+    fn alu_rl(&mut self, a: u8) -> u8 {
+        let c = a & 0x80 == 0x80;
+        let r = (a << 1) | (if self.reg.getflag(C) { 1 } else { 0 });
+        self.alu_srflagupdate(r, c);
+        return r;
+    }
+
+    fn alu_rrc(&mut self, a: u8) -> u8 {
+        let c = a & 0x01 == 0x01;
+        let r = (a >> 1) | (if c { 0x80 } else { 0 });
+        self.alu_srflagupdate(r, c);
+        return r;
+    }
+
+    fn alu_rr(&mut self, a: u8) -> u8 {
+        let c = a & 0x01 == 0x01;
+        let r = (a >> 1) | (if self.reg.getflag(C) { 0x80 } else { 0 });
+        self.alu_srflagupdate(r, c);
+        return r;
+    }
+
+    fn alu_sla(&mut self, a: u8) -> u8 {
+        let c = a & 0x80 == 0x80;
+        let r = a << 1;
+        self.alu_srflagupdate(r, c);
+        return r;
+    }
+
+    fn alu_sra(&mut self, a: u8) -> u8 {
+        let c = a & 0x01 == 0x01;
+        let r = (a >> 1) | (a & 0x80);
+        self.alu_srflagupdate(r, c);
+        return r;
+    }
+
+    fn alu_srl(&mut self, a: u8) -> u8 {
+        let c = a & 0x01 == 0x01;
+        let r = a >> 1;
+        self.alu_srflagupdate(r, c);
+        return r;
+    }
+
+    fn alu_bit(&mut self, a: u8, b: u8) {
+        let r = a & (1 << (b as u32)) == 0;
+        self.reg.flag(N, false);
+        self.reg.flag(H, true);
+        self.reg.flag(Z, r);
+    }
+
+    fn alu_daa(&mut self) {
+        let mut a = self.reg.a;
+        let mut adjust = if self.reg.getflag(C) { 0x60 } else { 0x00 };
+        if self.reg.getflag(H) {
+            adjust |= 0x06;
+        };
+        if !self.reg.getflag(N) {
+            if a & 0x0F > 0x09 {
+                adjust |= 0x06;
+            };
+            if a > 0x99 {
+                adjust |= 0x60;
+            };
+            a = a.wrapping_add(adjust);
+        } else {
+            a = a.wrapping_sub(adjust);
+        }
+
+        self.reg.flag(C, adjust >= 0x60);
+        self.reg.flag(H, false);
+        self.reg.flag(Z, a == 0);
+        self.reg.a = a;
+    }
+
+    fn cpu_jr(&mut self) {
+        let n = self.fetchbyte() as i8;
+        self.reg.pc = ((self.reg.pc as u32 as i32) + (n as i32)) as u16;
+    }
+
+    pub fn read_byte(&mut self, address: u16) -> u8 {
+        self.mmu.rb(address)
+    }
+    pub fn write_byte(&mut self, address: u16, byte: u8) {
+        self.mmu.wb(address, byte)
+    }
+
+    pub fn read_wide(&mut self, address: u16) -> u16 {
+        self.mmu.rw(address)
+    }
+    pub fn write_wide(&mut self, address: u16, wide: u16) {
+        self.mmu.ww(address, wide)
     }
 }
 
-/// Memory wrapper class that implements functions to update and run timers
+#[derive(Clone)]
+struct MemoryAdapter {
+    mem: SharedMemory,
+}
+
+impl MemoryAdapter {
+    fn new(mem: SharedMemory) -> Self {
+        Self { mem }
+    }
+
+    fn rb(&self, address: u16) -> u8 {
+        self.mem.lock().unwrap().read_byte(address)
+    }
+
+    fn wb(&self, address: u16, value: u8) {
+        self.mem.lock().unwrap().write_byte(address, value);
+    }
+
+    fn rw(&self, address: u16) -> u16 {
+        self.mem.lock().unwrap().read_word(address)
+    }
+
+    fn ww(&self, address: u16, value: u16) {
+        self.mem.lock().unwrap().write_word(address, value);
+    }
+
+    fn read_ie(&self) -> u8 {
+        self.rb(IE)
+    }
+
+    fn read_if(&self) -> u8 {
+        self.rb(IF)
+    }
+
+    fn write_if(&self, value: u8) {
+        self.wb(IF, value);
+    }
+
+    fn switch_speed(&self) {}
+}
+
 pub struct Timer {
     mem: SharedMemory,
     divider_counter: u32,
@@ -1630,7 +2598,6 @@ impl Timer {
     pub fn new(mem: SharedMemory) -> Self {
         Timer {
             mem,
-
             divider_counter: 0,
         }
     }
@@ -1638,27 +2605,19 @@ impl Timer {
     pub fn update_timers(&mut self, cycles: i32) {
         self.do_divider_registers(cycles);
 
-        //the clock must be enabled to update itself
         if self.is_clock_enabled() {
             let mut mem = self.mem.lock().unwrap();
             mem.timer_counter -= cycles;
 
-            // enough cpu cycled have happened to update the timer
             if mem.timer_counter <= 0 {
-                // reset timer counter to correct value;
                 mem.set_clock_frequency();
 
-                // timer is close to overflowing
-                // aquire a lock on memory for this operation
                 if mem.read_byte(TIMA) == 255 {
-                    //Reset the timer back to the overflow state
                     let tma_val = mem.read_byte(TMA);
                     mem.write_byte(TIMA, tma_val);
-                    // We are done accessing memory so we drop the lock
                     mem.request_interrupt(2);
                 } else {
-                    // Incriments timer
-                    let tima_val = mem.read_byte(TIMA) + 1;
+                    let tima_val = mem.read_byte(TIMA).wrapping_add(1);
                     mem.write_byte(TIMA, tima_val);
                 }
             }
@@ -1671,283 +2630,14 @@ impl Timer {
             self.divider_counter = 0;
 
             let mut mem = self.mem.lock().unwrap();
-            // 0xFF04 is the location of the divider register
-            // debug_println!("Force reading from divider reg");
             let divider_register = mem.read_byte_forced(DIVIDER_REGISTER).wrapping_add(1);
-            // debug_println!("Divider Register Value: {:X}", divider_register);
             mem.write_byte_forced(DIVIDER_REGISTER, divider_register);
         }
     }
 
-    /// Checks bit 2 in TMC to see if timer is currently enabled
     fn is_clock_enabled(&self) -> bool {
-        // Get a lock on the memory
         let mem = self.mem.lock().unwrap();
         let tmc_reg = mem.read_byte(TMC);
-        // Test bit 2
         tmc_reg & 0x4 != 0
-    }
-}
-
-#[cfg_attr(rustfmt, rustfmt_skip)]
-fn flags_add(acc: Byte, add: Byte, res: Byte) -> Byte {
-    (if (res & 0xFF) == 0 {ZF} else {res & SF}) |
-    (res & (YF | XF)) | ((((res as Word) >> 8) as Byte) & CF) |
-    ((acc ^ add ^ res) & HF) | ((((acc ^ add ^ 0x80) & (add ^ res)) >> 5) & VF)
-}
-
-#[cfg_attr(rustfmt, rustfmt_skip)]
-fn flags_sub(acc: Byte, sub: Byte, res: Byte) -> Byte {
-    NF | (if (res & 0xFF) == 0 {ZF} else {res & SF}) |
-    (res & (YF | XF)) | ((((res as Word) >> 8) as Byte) & CF) |
-    ((acc ^ sub ^ res) & HF) | ((((acc ^ sub) & (res ^ acc)) >> 5) & VF)
-}
-
-#[cfg_attr(rustfmt, rustfmt_skip)]
-fn flags_cp(acc: Byte, sub: Byte, res: Byte) -> Byte {
-    // the only difference to flags_sub() is that the
-    // 2 undocumented flag bits X and Y are taken from the
-    // sub-value, not the result
-    NF | (if (res & 0xFF) == 0 {ZF} else {res & SF}) |
-    (sub & (YF | XF)) | ((((res as Word) >> 8) as Byte) & CF) |
-    ((acc ^ sub ^ res) & HF) | ((((acc ^ sub) & (res ^ acc)) >> 5) & VF)
-}
-
-#[cfg_attr(rustfmt, rustfmt_skip)]
-fn flags_szp(val: Byte) -> Byte {
-    let v = val & 0xFF;
-    (if (v.count_ones() & 1) == 0 {PF} else {0}) |
-    (if v == 0 {ZF} else {v & SF}) | (v & (YF | XF))
-}
-
-#[inline(always)]
-fn flags_sziff2(val: Byte, iff2: bool) -> Byte {
-    (if (val & 0xFF) == 0 { ZF } else { val & SF }) | (val & (YF | XF)) | if iff2 { PF } else { 0 }
-}
-
-#[cfg(test)]
-mod test {
-
-    use super::*;
-    use ntest::timeout;
-
-    #[test]
-    #[timeout(100)]
-    fn test_cpu_init() {
-        let mem = Arc::new(Mutex::new(Memory::new()));
-
-        let cpu = CPU::new(mem);
-
-        assert_eq!(cpu.cycles, 0);
-    }
-
-    #[test]
-    #[timeout(100)]
-    fn test_cpu_interrupts() {
-        let mem = Arc::new(Mutex::new(Memory::new()));
-        let mut cpu = CPU::new(mem);
-
-        assert_eq!(cpu.cycles, 0);
-        assert!(cpu.ime);
-
-        let mut mem = cpu.device_memory.lock().unwrap();
-        mem.request_interrupt(1); // Request vblank interrupt
-        mem.enable_interrupt(1); // Enabled interrupt
-        assert_eq!(mem.read_byte(IF), 0x2);
-        drop(mem);
-        cpu.handle_interrupts();
-
-        assert_eq!(cpu.registers.reg_pc.value(), 0x48);
-        assert!(!cpu.ime);
-
-        let ret = cpu.pop_stack();
-        assert_eq!(ret, 0x100);
-    }
-
-    #[test]
-    #[timeout(100)]
-    fn test_push_pop_stack() {
-        let mem = Arc::new(Mutex::new(Memory::new()));
-        let mut cpu = CPU::new(mem);
-
-        cpu.push_stack(cpu.registers.reg_af.value());
-        assert_eq!(cpu.registers.reg_sp.value(), 0xFFFC);
-
-        let ret = cpu.pop_stack();
-        assert_eq!(ret, 0x01B0);
-        assert_eq!(cpu.registers.reg_sp.value(), 0xFFFE);
-    }
-
-    #[test]
-    #[timeout(100)]
-    fn test_timer_increment() {
-        let mem = Arc::new(Mutex::new(Memory::new()));
-        {
-            let mut m = mem.lock().unwrap();
-            m.write_byte(TMC, 0x5); // enable timer, freq select 1
-            m.set_clock_frequency();
-            m.timer_counter = 0; // force immediate update
-        }
-        let mut timer = Timer::new(Arc::clone(&mem));
-        timer.update_timers(16);
-        let m = mem.lock().unwrap();
-        assert_eq!(m.read_byte(TIMA), 1);
-        assert_eq!(m.read_byte(IF), 0);
-    }
-
-    #[test]
-    #[timeout(100)]
-    fn test_timer_overflow() {
-        let mem = Arc::new(Mutex::new(Memory::new()));
-        {
-            let mut m = mem.lock().unwrap();
-            m.write_byte(TMC, 0x5); // enable timer, freq select 1
-            m.write_byte(TIMA, 255);
-            m.write_byte(TMA, 7);
-            m.set_clock_frequency();
-            m.timer_counter = 0; // force immediate update
-        }
-        let mut timer = Timer::new(Arc::clone(&mem));
-        timer.update_timers(16);
-        let m = mem.lock().unwrap();
-        assert_eq!(m.read_byte(TIMA), 7);
-        assert_eq!(m.read_byte(IF) & 0x4, 0x4);
-    }
-
-    #[test]
-    #[timeout(100)]
-    fn test_divider_register_increment() {
-        let mem = Arc::new(Mutex::new(Memory::new()));
-        let mut timer = Timer::new(Arc::clone(&mem));
-        timer.update_timers(255);
-        let m = mem.lock().unwrap();
-        assert_eq!(m.read_byte_forced(DIVIDER_REGISTER), 1);
-    }
-
-    #[test]
-    #[timeout(100)]
-    fn test_register_operations() {
-        let mut reg = registers::Register::new(0x1234);
-        assert_eq!(reg.value(), 0x1234);
-        assert_eq!(reg.high_value(), 0x12);
-        assert_eq!(reg.low_value(), 0x34);
-
-        reg.incriment();
-        assert_eq!(reg.value(), 0x1235);
-
-        reg.decriment();
-        reg.decriment();
-        assert_eq!(reg.value(), 0x1233);
-
-        reg.set(0xABCD);
-        assert_eq!(reg.value(), 0xABCD);
-    }
-
-    #[test]
-    #[timeout(100)]
-    fn test_cpu_reset() {
-        let mem = Arc::new(Mutex::new(Memory::new()));
-        let mut cpu = CPU::new(Arc::clone(&mem));
-
-        cpu.cycles = 42;
-        cpu.ime = false;
-        cpu.registers.reg_af.set(0xFFFF);
-
-        let old_mem = Arc::clone(&cpu.device_memory);
-        cpu.reset();
-
-        assert_eq!(cpu.cycles, 0);
-        assert!(cpu.ime);
-        assert_eq!(cpu.registers.reg_af.value(), 0x01B0);
-        assert!(Arc::ptr_eq(&old_mem, &cpu.device_memory));
-        let new_mem = cpu.device_memory.lock().unwrap();
-        assert_eq!(new_mem.read_byte(TIMA), 0);
-    }
-
-    #[test]
-    #[timeout(100)]
-    fn test_timer_disabled_no_increment() {
-        let mem = Arc::new(Mutex::new(Memory::new()));
-        {
-            let mut m = mem.lock().unwrap();
-            m.write_byte(TMC, 0x0); // timer disabled
-            m.set_clock_frequency();
-            m.timer_counter = 0;
-        }
-        let mut timer = Timer::new(Arc::clone(&mem));
-        timer.update_timers(16);
-        let m = mem.lock().unwrap();
-        assert_eq!(m.read_byte(TIMA), 0);
-    }
-
-    #[test]
-    #[timeout(100)]
-    fn test_inc_dec_wraparound() {
-        let mem = Arc::new(Mutex::new(Memory::new()));
-        let mut cpu = CPU::new(mem);
-
-        assert_eq!(cpu.inc8(0xFF), 0x00);
-        assert_eq!(cpu.dec8(0x00), 0xFF);
-    }
-
-    #[test]
-    #[timeout(100)]
-    fn test_add_adc_wraparound() {
-        let mem = Arc::new(Mutex::new(Memory::new()));
-        let mut cpu = CPU::new(mem);
-
-        cpu.registers.set_a(0xFF);
-        cpu.add8(0x02);
-        assert_eq!(cpu.registers.val_a(), 0x01);
-
-        cpu.registers.set_a(0xFF);
-        cpu.registers.set_f(CF);
-        cpu.adc8(0x01);
-        assert_eq!(cpu.registers.val_a(), 0x01);
-    }
-    #[test]
-    #[timeout(100)]
-    fn test_serial_interrupt_vector() {
-        let mem = Arc::new(Mutex::new(Memory::new()));
-        let mut cpu = CPU::new(Arc::clone(&mem));
-
-        {
-            let mut m = mem.lock().unwrap();
-            m.request_interrupt(3);
-            m.enable_interrupt(3);
-            assert_eq!(m.read_byte(IF), 1 << 3);
-        }
-
-        cpu.handle_interrupts();
-
-        {
-            let m = cpu.device_memory.lock().unwrap();
-            assert_eq!(m.read_byte(IF), 0);
-        }
-
-        assert_eq!(cpu.registers.reg_pc.value(), 0x58);
-        let ret = cpu.pop_stack();
-        assert_eq!(ret, 0x100);
-    }
-
-    #[test]
-    #[timeout(100)]
-    fn test_timer_update() {
-        let mem = Arc::new(Mutex::new(Memory::new()));
-        let mut timer = Timer::new(Arc::clone(&mem));
-
-        {
-            let mut m = mem.lock().unwrap();
-            m.ram_startup();
-            m.write_byte(TMC, 0x04); // enable timer, freq = 4096
-            m.write_byte(TIMA, 0x00);
-            m.set_clock_frequency();
-        }
-
-        timer.update_timers(1024);
-
-        let m = mem.lock().unwrap();
-        assert_eq!(m.read_byte(TIMA), 1);
-        assert!(m.timer_counter > 0);
     }
 }

@@ -5,11 +5,11 @@ A simple Game Boy emulator written in Rust.
 ## Features
 
 - CPU emulation (Sharp LR35902)
-- Memory management
+- Shared Memory bank
 - Basic graphics rendering
 - ROM loading
 
-## Getting Started
+## Repo Basics
 
 1. Clone the repository:
 
