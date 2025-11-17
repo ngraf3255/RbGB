@@ -4,16 +4,16 @@ extern crate sdl2;
 
 use std::{
     sync::{Arc, Mutex},
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use cpu::CPU;
 use debug_print::debug_println;
 use mem::{Memory, SharedMemory};
-use sdl2::{event::Event, keyboard::Keycode, pixels::Color, pixels::PixelFormatEnum, rect::Rect};
 use types::{SCREEN_HEIGHT, SCREEN_WIDTH};
 
 use crate::types::{CURRENT_SCANLINE, LCD_CONTROL};
+use sdl::SdlApp;
 
 mod bus;
 mod cpu;
@@ -24,102 +24,18 @@ mod registers;
 mod sound;
 mod types;
 
+mod sdl;
+
 ///Main entry point to gameboy simulation
 fn main() -> Result<(), String> {
     println!("Hello, world!");
 
     let mut emulator = Emulator::new();
-
-    let sdl_context = sdl2::init()?;
-    let video_subsystem = sdl_context.video()?;
-    let mut event_pump = sdl_context.event_pump()?;
-
-    let window = video_subsystem
-        .window("Gameboy Emulator", SCREEN_WIDTH * 5, SCREEN_HEIGHT * 5)
-        .position_centered()
-        .build()
-        .map_err(|e| e.to_string())?;
-
-    let mut canvas = window
-        .into_canvas()
-        .accelerated()
-        .build()
-        .map_err(|e| e.to_string())?;
-
-    let texture_creator = canvas.texture_creator();
-
-    let mut texture = texture_creator
-        .create_texture_streaming(PixelFormatEnum::RGB24, SCREEN_WIDTH, SCREEN_HEIGHT)
-        .map_err(|e| e.to_string())?;
-
-    'running: loop {
-        let frame_start = Instant::now();
-
-        // Handle events
-        for event in event_pump.poll_iter() {
-            match event {
-                Event::Quit { .. } => break 'running,
-                Event::KeyDown {
-                    keycode: Some(Keycode::P),
-                    ..
-                } => {
-                    emulator.toggle_pause();
-                }
-                Event::KeyDown {
-                    keycode: Some(Keycode::L),
-                    ..
-                } => {
-                    println!("Enter path to ROM:");
-                    let path = "roms/kirby.gb";
-
-                    if let Err(e) = emulator.load_rom(path.trim()) {
-                        println!("Failed to load ROM: {e}");
-                    } else {
-                        println!("ROM loaded");
-                    }
-                }
-                Event::KeyDown {
-                    keycode: Some(Keycode::O),
-                    ..
-                } => {
-                    emulator.dump_lcd_mem();
-                }
-                _ => {}
-            }
-        }
-
-        // Emulator main loop
-        emulator.update();
-
-        // Update the texture with new pixel data
-        emulator.blit_rgb_bytes_to_texture(&mut texture)?;
-
-        // Draw
-        canvas.clear();
-        canvas.copy(
-            &texture,
-            None,
-            Some(Rect::new(0, 0, SCREEN_WIDTH * 5, SCREEN_HEIGHT * 5)),
-        )?;
-
-        if emulator.paused {
-            canvas.set_draw_color(Color::RGB(50, 50, 50));
-            canvas.fill_rect(Rect::new(0, 0, SCREEN_WIDTH * 5, SCREEN_HEIGHT * 5))?;
-        }
-
-        canvas.present();
-
-        // Frame limiting to 60 FPS
-        let frame_duration = frame_start.elapsed();
-        if frame_duration < Duration::from_millis(16) {
-            std::thread::sleep(Duration::from_millis(16) - frame_duration);
-        }
-    }
-
-    Ok(())
+    let mut sdl_app = SdlApp::new()?;
+    sdl_app.run(&mut emulator)
 }
 
-struct Emulator {
+pub struct Emulator {
     screen: graphics::Screen,
     cpu: CPU,
     memory: SharedMemory,
@@ -161,6 +77,10 @@ impl Emulator {
 
     pub fn toggle_pause(&mut self) {
         self.paused = !self.paused;
+    }
+
+    pub fn is_paused(&self) -> bool {
+        self.paused
     }
 
     pub fn load_rom(&mut self, path: &str) -> Result<(), String> {
