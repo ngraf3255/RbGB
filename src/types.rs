@@ -82,15 +82,21 @@ pub enum GameInput {
     Right,
     Down,
     Start,
-    Stop,
+    Select,
     A,
     B,
     Unknown,
 }
 
 pub enum KeyState {
-    Down,
-    Up,
+    Down = 0,
+    Up = 1,
+}
+
+impl Default for KeyState {
+    fn default() -> Self {
+        KeyState::Up
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

@@ -38,7 +38,7 @@ fn register_key(key: Keycode) -> GameInput {
         Keycode::D => GameInput::Right,
 
         // Go stop
-        Keycode::Q => GameInput::Stop,
+        Keycode::Q => GameInput::Select,
 
         // Go start
         Keycode::E => GameInput::Start,

@@ -23,6 +23,12 @@ pub struct Memory {
     pub timer_counter: i32,
 }
 
+impl Default for Memory {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Memory {
     pub fn new() -> Self {
         Memory {
