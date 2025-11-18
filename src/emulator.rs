@@ -3,7 +3,9 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::types::{CURRENT_SCANLINE, LCD_CONTROL, SCREEN_HEIGHT, SCREEN_WIDTH};
+use crate::types::{
+    CURRENT_SCANLINE, GameInput, KeyState, LCD_CONTROL, SCREEN_HEIGHT, SCREEN_WIDTH,
+};
 use cpu::CPU;
 use debug_print::debug_println;
 use mem::{Memory, SharedMemory};
@@ -113,5 +115,10 @@ impl Emulator {
             mem.read_byte_forced(CURRENT_SCANLINE)
         );
         debug_println!("LCD Control: {:X}", mem.read_byte_forced(LCD_CONTROL));
+    }
+
+    /// Handle input to the emulator
+    pub fn game_input(&self, input: GameInput, val: KeyState) {
+        ()
     }
 }

@@ -15,6 +15,8 @@ use sdl2::{
     rect::Rect,
 };
 
+use super::io::handle_joystick_input;
+
 // Window size multiplier so original 160x144 framebuffer is easier to see
 const WINDOW_SCALE: u32 = 5;
 
@@ -114,6 +116,7 @@ impl SdlApp {
                 }
                 true
             }
+            // Dump the lcd memory details
             Event::KeyDown {
                 keycode: Some(Keycode::O),
                 ..
@@ -121,7 +124,12 @@ impl SdlApp {
                 emulator.dump_lcd_mem();
                 true
             }
-            _ => true,
+
+            // handle all remaining inputs as a game input
+            event => {
+                handle_joystick_input(event, emulator);
+                true
+            }
         }
     }
 

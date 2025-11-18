@@ -76,6 +76,23 @@ pub const MEMORY_REGION: Word = 0x8000; // Graphics memory location
 pub const SIZE_OF_TILE_IN_MEMORY: i32 = 16;
 pub const OFFSET: i32 = 128;
 
+pub enum GameInput {
+    Up,
+    Left,
+    Right,
+    Down,
+    Start,
+    Stop,
+    A,
+    B,
+    Unknown,
+}
+
+pub enum KeyState {
+    Down,
+    Up,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Color {
     White,
