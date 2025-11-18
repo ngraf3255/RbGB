@@ -62,28 +62,6 @@ To build and run tests locally:
 - Trim workflow to reflect new docker container
 - Implement custom cpu opcode handling
 
-## Coding Statistics
-
-<!--START_SECTION:waka-->
-
-```rust
-From: 18 June 2025 - To: 17 November 2025
-
-Total Time: 77 hrs 13 mins
-
-C                29 hrs 46 mins  █████████▒░░░░░░░░░░░░░░░   37.72 %
-Rust             19 hrs 31 mins  ██████▒░░░░░░░░░░░░░░░░░░   24.74 %
-C++              5 hrs 24 mins   █▓░░░░░░░░░░░░░░░░░░░░░░░   06.85 %
-Python           4 hrs 38 mins   █▒░░░░░░░░░░░░░░░░░░░░░░░   05.89 %
-HTML             3 hrs 17 mins   █░░░░░░░░░░░░░░░░░░░░░░░░   04.17 %
-Markdown         3 hrs 3 mins    █░░░░░░░░░░░░░░░░░░░░░░░░   03.88 %
-JSON             2 hrs 48 mins   █░░░░░░░░░░░░░░░░░░░░░░░░   03.55 %
-JavaScript       2 hrs 36 mins   ▓░░░░░░░░░░░░░░░░░░░░░░░░   03.31 %
-Other            1 hr 42 mins    ▓░░░░░░░░░░░░░░░░░░░░░░░░   02.17 %
-```
-
-<!--END_SECTION:waka-->
-
 ## Acknowledgements
 
 Much of this was written and based off of [Codeslinger Gameboy](http://www.codeslinger.co.uk/pages/projects/gameboy/beginning.html). I needed this guide to get through most of this. Additionally, I learned about how the RZ80 worked from [RZ80](https://floooh.github.io/) and modified the CPU implementation of the LR35902 from  [rboy](https://github.com/mvdnes/rboy). Getting the CPU emulation to work was the hardest part of this project.
