@@ -2,7 +2,7 @@
 
 use debug_print::debug_println;
 
-use crate::types::{GameInput, INPUT_REGISTER, KeyState};
+use crate::types::{GameInput, KeyState};
 
 use super::mem::SharedMemory;
 
@@ -56,13 +56,13 @@ impl Joypad {
     /// Main hardworking function that does the work to write the joypad state to RAM
     fn write_input_to_mem(&mut self) {
         let mut buttons = 0;
-        buttons |= (self.a as u8) << 0;
+        buttons |= self.a as u8;
         buttons |= (self.b as u8) << 1;
         buttons |= (self.select as u8) << 2;
         buttons |= (self.start as u8) << 3;
 
         let mut directions = 0;
-        directions |= (self.right as u8) << 0;
+        directions |= self.right as u8;
         directions |= (self.left as u8) << 1;
         directions |= (self.up as u8) << 2;
         directions |= (self.down as u8) << 3;
@@ -75,8 +75,8 @@ impl Joypad {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::emulator::mem::Memory;
     use crate::types::IF;
+    use crate::{emulator::mem::Memory, types::INPUT_REGISTER};
     use std::sync::{Arc, Mutex};
 
     fn setup_joypad(select_bits: u8) -> (Joypad, SharedMemory) {

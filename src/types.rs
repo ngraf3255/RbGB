@@ -92,16 +92,11 @@ pub enum GameInput {
     Unknown,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 pub enum KeyState {
     Pressed = 0,
+    #[default]
     Released = 1,
-}
-
-impl Default for KeyState {
-    fn default() -> Self {
-        KeyState::Released
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
