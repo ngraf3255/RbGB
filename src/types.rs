@@ -76,6 +76,29 @@ pub const MEMORY_REGION: Word = 0x8000; // Graphics memory location
 pub const SIZE_OF_TILE_IN_MEMORY: i32 = 16;
 pub const OFFSET: i32 = 128;
 
+// Input Constants
+pub const INPUT_REGISTER: Word = 0xFF00;
+
+#[derive(Debug)]
+pub enum GameInput {
+    Up,
+    Left,
+    Right,
+    Down,
+    Start,
+    Select,
+    A,
+    B,
+    Unknown,
+}
+
+#[derive(Copy, Clone, Default)]
+pub enum KeyState {
+    Pressed = 0,
+    #[default]
+    Released = 1,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Color {
     White,

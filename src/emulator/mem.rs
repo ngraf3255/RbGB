@@ -19,8 +19,16 @@ pub struct Memory {
     ram_banks: CurrentRamBank,
     ram_write_enable: bool,
     rom_bank_enable: bool,
+    joypad_buttons: Byte,
+    joypad_directions: Byte,
 
     pub timer_counter: i32,
+}
+
+impl Default for Memory {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Memory {
@@ -34,6 +42,8 @@ impl Memory {
             ram_banks: CurrentRamBank::Bank0,
             ram_write_enable: false,
             rom_bank_enable: true,
+            joypad_buttons: 0x0F,
+            joypad_directions: 0x0F,
 
             timer_counter: 1024,
         }
@@ -80,6 +90,10 @@ impl Memory {
         } else if addr == CURRENT_SCANLINE {
             // If ever writing to the current scanline always set it to 0
             self.mem[CURRENT_SCANLINE as usize] = 0;
+        } else if addr == INPUT_REGISTER {
+            let current = self.mem[INPUT_REGISTER as usize];
+            self.mem[INPUT_REGISTER as usize] = (value & 0x30) | 0xC0 | (current & 0x0F);
+            self.recompute_joypad();
         } else if addr == DMA_REG {
             // Game is activating a direct memory access
             self.dma_transfer(value);
@@ -310,6 +324,12 @@ impl Memory {
         self.write_byte(IF, request);
     }
 
+    pub fn update_joypad_state(&mut self, buttons: Byte, directions: Byte) {
+        self.joypad_buttons = buttons & 0x0F;
+        self.joypad_directions = directions & 0x0F;
+        self.recompute_joypad();
+    }
+
     /// Loads the given ROM bytes into memory
     pub fn load_rom_data(&mut self, data: &[u8]) {
         self.mem.fill(0); // clear VRAM, WRAM, OAM, I/O mirrors
@@ -325,16 +345,19 @@ impl Memory {
     }
 
     fn read_byte_internal(&self, addr: Word) -> Byte {
+        // read from the always consistant rom bank
         if addr < 0x4000 {
             return self.read_rom_byte(addr as usize);
         }
 
+        // map to rom banking
         if (0x4000..=0x7FFF).contains(&addr) {
             let relative = (addr - 0x4000) as usize;
             let offset = (self.rom_banks.value() as usize) * 0x4000;
             return self.read_rom_byte(offset + relative);
         }
 
+        // map to ram banking
         if (0xA000..=0xBFFF).contains(&addr) {
             let offset = (addr - 0xA000) as usize;
             let bank = self.ram_banks as usize;
@@ -342,6 +365,30 @@ impl Memory {
         }
 
         self.mem[addr as usize]
+    }
+
+    fn recompute_joypad(&mut self) {
+        let prev = self.mem[INPUT_REGISTER as usize];
+
+        let select_buttons = prev & 0x20 == 0;
+        let select_directions = prev & 0x10 == 0;
+
+        let mut lower = 0x0F;
+        if select_buttons {
+            lower &= self.joypad_buttons;
+        }
+        if select_directions {
+            lower &= self.joypad_directions;
+        }
+
+        let next = (prev & 0x30) | 0xC0 | (lower & 0x0F);
+        self.mem[INPUT_REGISTER as usize] = next;
+
+        let prev_low = prev & 0x0F;
+        let next_low = next & 0x0F;
+        if (prev_low & !next_low) != 0 {
+            self.request_interrupt(4);
+        }
     }
 
     fn read_rom_byte(&self, index: usize) -> Byte {
@@ -710,6 +757,18 @@ mod test {
 
         mem.enable_interrupt(4);
         assert_eq!(mem.read_byte(IE), 1 << 4);
+    }
+
+    #[test]
+    #[timeout(10)]
+    fn test_joypad_write_preserves_select_and_recomputes() {
+        let mut mem = Memory::new();
+        mem.write_byte_forced(INPUT_REGISTER, 0xFF);
+        mem.update_joypad_state(0x0E, 0x0F); // A pressed
+
+        mem.write_byte(INPUT_REGISTER, 0x10); // select buttons
+        assert_eq!(mem.read_byte(INPUT_REGISTER), 0xDE);
+        assert_eq!(mem.read_byte(IF) & (1 << 4), 1 << 4);
     }
 
     #[test]

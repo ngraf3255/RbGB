@@ -1,9 +1,11 @@
 use crate::emulator::mem::SharedMemory;
-use crate::emulator::registers::{
+use crate::types::{DIVIDER_REGISTER, IE, IF, TIMA, TMA, TMC};
+use registers::{
     CpuFlag::{C, H, N, Z},
     Registers,
 };
-use crate::types::{DIVIDER_REGISTER, IE, IF, TIMA, TMA, TMC};
+
+mod registers;
 
 #[allow(clippy::upper_case_acronyms)]
 pub struct CPU {

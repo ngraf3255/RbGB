@@ -3,21 +3,22 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::types::{CURRENT_SCANLINE, LCD_CONTROL, SCREEN_HEIGHT, SCREEN_WIDTH};
-use cpu::CPU;
+use crate::types::{
+    CURRENT_SCANLINE, GameInput, INPUT_REGISTER, KeyState, LCD_CONTROL, SCREEN_HEIGHT, SCREEN_WIDTH,
+};
 use debug_print::debug_println;
-use mem::{Memory, SharedMemory};
 
 mod cpu;
 mod graphics;
+mod joypad;
 mod mem;
-mod registers;
 mod sound;
 
 pub struct Emulator {
     screen: graphics::Screen,
-    cpu: CPU,
-    memory: SharedMemory,
+    cpu: cpu::CPU,
+    joypad: joypad::Joypad,
+    memory: mem::SharedMemory,
     paused: bool,
 }
 
@@ -27,11 +28,12 @@ impl Emulator {
     const FRAME_DURATION: Duration = Duration::from_nanos(16_741_000);
 
     pub fn new() -> Self {
-        let mem = Arc::new(Mutex::new(Memory::new()));
+        let mem = Arc::new(Mutex::new(mem::Memory::new()));
         mem.lock().unwrap().ram_startup();
         Emulator {
             screen: graphics::Screen::new(Arc::clone(&mem)),
-            cpu: CPU::new(Arc::clone(&mem)),
+            cpu: cpu::CPU::new(Arc::clone(&mem)),
+            joypad: joypad::Joypad::new(Arc::clone(&mem)),
             memory: mem,
             paused: true,
         }
@@ -113,5 +115,14 @@ impl Emulator {
             mem.read_byte_forced(CURRENT_SCANLINE)
         );
         debug_println!("LCD Control: {:X}", mem.read_byte_forced(LCD_CONTROL));
+        debug_println!(
+            "Joystick Register: 0x{:X}",
+            mem.read_byte_forced(INPUT_REGISTER)
+        );
+    }
+
+    /// Handle input to the emulator
+    pub fn game_input(&mut self, input: GameInput, val: KeyState) {
+        self.joypad.log_input(input, val)
     }
 }
