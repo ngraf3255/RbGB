@@ -132,7 +132,7 @@ impl Screen {
     }
 
     fn render_tiles(&mut self, control: Byte) {
-        debug_println!("Rendering tile, control: {:b}", control);
+        // debug_println!("Rendering tile, control: {:b}", control);
         let mem = self.device_memory.lock().unwrap();
 
         let mut unsigned = true;

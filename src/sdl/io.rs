@@ -11,12 +11,12 @@ pub fn handle_joystick_input(event: Event, emulator: &mut Emulator) {
         // Register key down inputs
         Event::KeyDown {
             keycode: Some(key), ..
-        } => emulator.game_input(register_key(key), KeyState::Down),
+        } => emulator.game_input(register_key(key), KeyState::Pressed),
 
         // Register key up inputs
         Event::KeyUp {
             keycode: Some(key), ..
-        } => emulator.game_input(register_key(key), KeyState::Up),
+        } => emulator.game_input(register_key(key), KeyState::Released),
 
         // otherwise do nothing
         _ => (),
@@ -48,6 +48,7 @@ fn register_key(key: Keycode) -> GameInput {
         // Go B
         Keycode::X => GameInput::B,
 
+        // gets ignored
         _ => GameInput::Unknown,
     }
 }

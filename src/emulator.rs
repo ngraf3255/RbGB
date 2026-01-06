@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::types::{
-    CURRENT_SCANLINE, GameInput, KeyState, LCD_CONTROL, SCREEN_HEIGHT, SCREEN_WIDTH,
+    CURRENT_SCANLINE, GameInput, INPUT_REGISTER, KeyState, LCD_CONTROL, SCREEN_HEIGHT, SCREEN_WIDTH,
 };
 use debug_print::debug_println;
 
@@ -12,7 +12,6 @@ mod cpu;
 mod graphics;
 mod joypad;
 mod mem;
-mod registers;
 mod sound;
 
 pub struct Emulator {
@@ -116,6 +115,10 @@ impl Emulator {
             mem.read_byte_forced(CURRENT_SCANLINE)
         );
         debug_println!("LCD Control: {:X}", mem.read_byte_forced(LCD_CONTROL));
+        debug_println!(
+            "Joystick Register: 0x{:X}",
+            mem.read_byte_forced(INPUT_REGISTER)
+        );
     }
 
     /// Handle input to the emulator

@@ -76,6 +76,10 @@ pub const MEMORY_REGION: Word = 0x8000; // Graphics memory location
 pub const SIZE_OF_TILE_IN_MEMORY: i32 = 16;
 pub const OFFSET: i32 = 128;
 
+// Input Constants
+pub const INPUT_REGISTER: Word = 0xFF00;
+
+#[derive(Debug)]
 pub enum GameInput {
     Up,
     Left,
@@ -88,14 +92,15 @@ pub enum GameInput {
     Unknown,
 }
 
+#[derive(Copy, Clone)]
 pub enum KeyState {
-    Down = 0,
-    Up = 1,
+    Pressed = 0,
+    Released = 1,
 }
 
 impl Default for KeyState {
     fn default() -> Self {
-        KeyState::Up
+        KeyState::Released
     }
 }
 
