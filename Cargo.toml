@@ -3,7 +3,8 @@ name = "rbgb"
 version = "0.1.0"
 edition = "2024"
 authors = ["Noah Graf <noah@grafhome.net>"]
-
+description = "A basic and rough gameboy emulator"
+license = "MIT"
 
 [lib]
 name = "rbgb_emulator"
