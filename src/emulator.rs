@@ -22,6 +22,12 @@ pub struct Emulator {
     paused: bool,
 }
 
+impl Default for Emulator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Emulator {
     /// Calls the needed functions once a frame
     const MAXCYCLES: u32 = 69905;
