@@ -124,7 +124,7 @@ impl Emulator {
     /// Dump key LCD and input registers for debugging.
     ///
     /// This is only compiled in debug builds and logs directly to stdout via
-    /// `debug_println`.
+    /// `debug_println`. If not compiled for debug this function does nothing
     pub fn dump_lcd_mem(&self) {
         #[cfg(debug_assertions)]
         let mem = self.memory.lock().unwrap();
