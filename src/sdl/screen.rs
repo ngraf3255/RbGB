@@ -13,6 +13,7 @@ use sdl2::{
     keyboard::Keycode,
     pixels::{Color, PixelFormatEnum},
     rect::Rect,
+    render::Texture,
 };
 
 use super::io::handle_joystick_input;
@@ -74,7 +75,7 @@ impl SdlApp {
 
             // Advance the emulator state, copy the LCD buffer into SDL, then render
             emulator.update();
-            emulator.blit_rgb_bytes_to_texture(&mut texture)?;
+            Self::blit_rgb_bytes_to_texture(emulator, &mut texture)?;
 
             self.draw(emulator.is_paused(), &texture)?;
             self.limit_frame_rate(frame_start);
@@ -157,6 +158,28 @@ impl SdlApp {
         }
 
         self.canvas.present();
+        Ok(())
+    }
+
+    fn blit_rgb_bytes_to_texture(
+        emulator: &Emulator,
+        texture: &mut Texture,
+    ) -> Result<(), String> {
+        let data = emulator.get_display_buffer();
+        let pitch = (SCREEN_WIDTH * 3) as usize; // 3 bytes per pixel
+        let expected_len = pitch * SCREEN_HEIGHT as usize;
+
+        if data.len() != expected_len {
+            return Err(format!(
+                "Expected {} bytes, but got {}",
+                expected_len,
+                data.len()
+            ));
+        }
+
+        texture
+            .update(None, data, pitch)
+            .map_err(|e| e.to_string())?;
         Ok(())
     }
 
