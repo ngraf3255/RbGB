@@ -260,15 +260,6 @@ impl Memory {
         }
     }
 
-    /// Returns the rom banking type of the current game
-    pub fn identify_banking_type(&self) -> RomBankingType {
-        match self.read_byte(0x147) {
-            1..3 => RomBankingType::MBC1,
-            5..6 => RomBankingType::MBC2,
-            _ => RomBankingType::None,
-        }
-    }
-
     /// Function for setting ram to requred startup values
     ///
     /// Its pretty messy
@@ -405,6 +396,7 @@ impl Memory {
         }
     }
 
+    #[allow(dead_code)]
     /// Enables an interrupt for the CPU to handle
     pub fn enable_interrupt(&mut self, interrupt: Byte) {
         // Use the current value of the IE register to preserve any already
@@ -659,21 +651,6 @@ mod test {
         assert_eq!(mem.get_color(1, 0xFF47), Color::LightGrey);
         assert_eq!(mem.get_color(2, 0xFF47), Color::DarkGrey);
         assert_eq!(mem.get_color(3, 0xFF47), Color::Black);
-    }
-
-    #[test]
-    #[timeout(10)]
-    fn test_identify_banking_type() {
-        let mut mem = Memory::new();
-        mem.write_byte_forced(0x147, 2);
-        assert_eq!(mem.identify_banking_type(), RomBankingType::MBC1);
-
-        let mut mem2 = Memory::new();
-        mem2.write_byte_forced(0x147, 5);
-        assert_eq!(mem2.identify_banking_type(), RomBankingType::MBC2);
-
-        let mem3 = Memory::new();
-        assert_eq!(mem3.identify_banking_type(), RomBankingType::None);
     }
 
     #[test]

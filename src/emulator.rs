@@ -3,9 +3,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::types::{
-    CURRENT_SCANLINE, GameInput, INPUT_REGISTER, KeyState, LCD_CONTROL, SCREEN_HEIGHT, SCREEN_WIDTH,
-};
+use crate::types::{CURRENT_SCANLINE, GameInput, INPUT_REGISTER, KeyState, LCD_CONTROL};
 use debug_print::debug_println;
 
 mod cpu;
@@ -20,6 +18,12 @@ pub struct Emulator {
     joypad: joypad::Joypad,
     memory: mem::SharedMemory,
     paused: bool,
+}
+
+impl Default for Emulator {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Emulator {
@@ -78,27 +82,8 @@ impl Emulator {
         Ok(())
     }
 
-    pub fn blit_rgb_bytes_to_texture(
-        &self,
-        texture: &mut sdl2::render::Texture,
-    ) -> Result<(), String> {
-        let data = &self.screen.buffer;
-        let pitch = SCREEN_WIDTH * 3; // 3 bytes per pixel
-
-        if data.len() != (pitch * SCREEN_HEIGHT) as usize {
-            return Err(format!(
-                "Expected {} bytes, but got {}",
-                pitch * SCREEN_HEIGHT,
-                data.len()
-            ));
-        }
-
-        // // debug_println!("Starting blit... ");
-        texture
-            .update(None, &data[..], pitch as usize)
-            .map_err(|e| e.to_string())?; // possibly replace with ?
-        // // debug_println!("Blit successful. ");
-        Ok(())
+    pub fn get_display_buffer(&self) -> &[u8] {
+        &self.screen.buffer
     }
 
     pub fn dump_lcd_mem(&self) {
