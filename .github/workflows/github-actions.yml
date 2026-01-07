@@ -1,5 +1,5 @@
 name: Build Test and deploy
-run-name: ${{ github.actor }} is building and testing the emulator! 🚀
+run-name: ${{ github.actor }} is building and testing the emulator! 
 on: [push]
 env:
   CARGO_TERM_COLOR: always
