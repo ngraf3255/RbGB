@@ -5,6 +5,8 @@ edition = "2024"
 authors = ["Noah Graf <noah@grafhome.net>"]
 description = "A basic and rough gameboy emulator"
 license = "MIT"
+repository = "https://github.com/ngraf3255/RbGB"
+keywords = ["gamedev", "graphics", "emulator"]
 
 [lib]
 name = "rbgb_emulator"
