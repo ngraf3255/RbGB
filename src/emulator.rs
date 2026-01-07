@@ -17,6 +17,9 @@ mod sound;
 /// Owns the CPU, memory, graphics, and input subsystems and drives the
 /// per-frame execution loop. The emulator starts paused and must be unpaused
 /// (or a ROM loaded) before it will execute instructions.
+///
+/// This type exposes the core API used by the frontend to load ROMs, advance
+/// frames, provide input, and read the display buffer.
 pub struct Emulator {
     screen: graphics::Screen,
     cpu: cpu::CPU,
@@ -47,6 +50,8 @@ impl Emulator {
     ///
     /// Memory is initialized to its startup state and the emulator begins
     /// paused until a ROM is loaded or `toggle_pause` is called.
+    ///
+    /// Returns a ready-to-use `Emulator` in the paused state.
     pub fn new() -> Self {
         let mem = Arc::new(Mutex::new(mem::Memory::new()));
         mem.lock().unwrap().ram_startup();
@@ -64,6 +69,8 @@ impl Emulator {
     /// Runs CPU instructions, updates timers and graphics, and handles
     /// interrupts until the frame's cycle budget is consumed. The function then
     /// sleeps to maintain the target frame rate.
+    ///
+    /// Returns `()` and has no effect if the emulator is paused.
     pub fn update(&mut self) {
         if self.paused {
             return;
@@ -87,6 +94,8 @@ impl Emulator {
     /// Toggle the paused state.
     ///
     /// When paused, `update` returns immediately without advancing emulation.
+    ///
+    /// Takes `&mut self` and returns `()`.
     pub fn toggle_pause(&mut self) {
         self.paused = !self.paused;
     }
@@ -94,6 +103,8 @@ impl Emulator {
     /// Check whether emulation is currently paused.
     ///
     /// Returns `true` if the emulator will skip work in `update`.
+    ///
+    /// Takes `&self` and returns a `bool` indicating pause state.
     pub fn is_paused(&self) -> bool {
         self.paused
     }
@@ -102,6 +113,11 @@ impl Emulator {
     ///
     /// The ROM contents are copied into memory, memory is reinitialized, and
     /// the CPU is reset. On success, the emulator is unpaused.
+    ///
+    /// Parameters:
+    /// - `path`: filesystem path to the ROM file.
+    ///
+    /// Returns `Ok(())` on success or a string I/O error on failure.
     pub fn load_rom(&mut self, path: &str) -> Result<(), String> {
         let data = std::fs::read(path).map_err(|e| e.to_string())?;
         let mut mem = self.memory.lock().unwrap();
@@ -117,6 +133,8 @@ impl Emulator {
     ///
     /// The buffer contains raw pixel data produced by the graphics subsystem.
     /// Its length and format are determined by `graphics::Screen`.
+    ///
+    /// Returns a borrowed `&[u8]` slice tied to the emulator's lifetime.
     pub fn get_display_buffer(&self) -> &[u8] {
         &self.screen.buffer
     }
@@ -124,7 +142,9 @@ impl Emulator {
     /// Dump key LCD and input registers for debugging.
     ///
     /// This is only compiled in debug builds and logs directly to stdout via
-    /// `debug_println`. If not compiled for debug this function does nothing
+    /// `debug_println`. If not compiled for debug this function does nothing.
+    ///
+    /// Takes `&self` and returns `()`. All details are dumped to the console
     pub fn dump_lcd_mem(&self) {
         #[cfg(debug_assertions)]
         let mem = self.memory.lock().unwrap();
@@ -156,6 +176,12 @@ impl Emulator {
     ///
     /// Updates the joypad state and forwards the input to memory-mapped input
     /// registers.
+    ///
+    /// Parameters:
+    /// - `input`: which Game Boy control was pressed or released.
+    /// - `val`: the key state for that control.
+    ///
+    /// Returns `()`.
     pub fn game_input(&mut self, input: GameInput, val: KeyState) {
         self.joypad.log_input(input, val)
     }

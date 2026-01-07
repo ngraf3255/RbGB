@@ -9,7 +9,7 @@ repository = "https://github.com/ngraf3255/RbGB"
 keywords = ["gamedev", "graphics", "emulator"]
 
 [lib]
-name = "rbgb_emulator"
+name = "rbgb"
 path = "src/lib.rs"
 
 [[bin]]
