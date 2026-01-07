@@ -11,6 +11,8 @@ A simple Game Boy emulator written in Rust.
 
 ## Repo Basics
 
+Before running this project ensure SDL2 is installed if you are not running with docker otherwise these steps will fail.
+
 1. Clone the repository:
 
     ```bash
@@ -24,7 +26,7 @@ A simple Game Boy emulator written in Rust.
     cargo build --release
     ```
 
-3. Run the emulator with a ROM:
+3. Run the emulator:
 
     ```bash
     cargo run --release
@@ -37,6 +39,7 @@ Load a rom by pressing L on the opened window for the ROM path prompt
 
 - Rust (latest stable)
 - SDL2 or Docker
+- CMake
 
 ## Running Tests
 
