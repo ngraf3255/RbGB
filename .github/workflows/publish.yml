@@ -25,6 +25,9 @@ jobs:
       - &install-rust
         name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+        # Install sdl2 since cargo publish needs it
+      - name: Install SDL2
+        run: sudo apt-get update && sudo apt-get install -y libsdl2-dev
       - name: Run release-plz
         uses: release-plz/action@v0.5
         with:
