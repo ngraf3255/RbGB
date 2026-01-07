@@ -2,7 +2,7 @@ FROM alpine:latest
 
 # Install rust and SDL2
 RUN apk update ; apk upgrade
-RUN apk add --no-cache rust cargo build-base sdl2-dev git
+RUN apk add --no-cache rust cargo build-base sdl2-dev git cmake
 
 WORKDIR /usr/src/rbgb
 COPY . .
