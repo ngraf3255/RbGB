@@ -1,6 +1,6 @@
 [package]
 name = "rbgb"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 authors = ["Noah Graf <noah@grafhome.net>"]
 description = "A basic and rough gameboy emulator"
