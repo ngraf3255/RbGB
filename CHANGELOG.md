@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0](https://github.com/ngraf3255/RbGB/compare/v0.1.2...v0.2.0) - 2026-01-07
+
+### Other
+
+- Added detailed doc comments to public items and configured github to serve the pages ([#28](https://github.com/ngraf3255/RbGB/pull/28))
+- Dropped publish environment from local github job ([#27](https://github.com/ngraf3255/RbGB/pull/27))
+- Updated changelog to remove old items ([#26](https://github.com/ngraf3255/RbGB/pull/26))
+- Changed import strategy for statements not included in formal releases ([#24](https://github.com/ngraf3255/RbGB/pull/24))
+
 ## [0.1.2](https://github.com/ngraf3255/RbGB/compare/v0.1.1...v0.1.2) - 2026-01-07
 
 ### Other
