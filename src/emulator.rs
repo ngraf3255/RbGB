@@ -3,9 +3,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::types::{
-    CURRENT_SCANLINE, GameInput, INPUT_REGISTER, KeyState, LCD_CONTROL, SCREEN_HEIGHT, SCREEN_WIDTH,
-};
+use crate::types::{CURRENT_SCANLINE, GameInput, INPUT_REGISTER, KeyState, LCD_CONTROL};
 use debug_print::debug_println;
 
 mod cpu;
