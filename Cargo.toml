@@ -2,10 +2,29 @@
 name = "rbgb"
 version = "0.1.0"
 edition = "2024"
+authors = ["Noah Graf <noah@grafhome.net>"]
+description = "A basic and rough gameboy emulator"
+license = "MIT"
+repository = "https://github.com/ngraf3255/RbGB"
+keywords = ["gamedev", "graphics", "emulator"]
+
+[lib]
+name = "rbgb_emulator"
+path = "src/lib.rs"
+
+[[bin]]
+name = "emulator_executable"
+path = "src/main.rs"
 
 [dependencies]
 debug_print = "1.0.0"
 lazy_static = "1.5.0"
-ntest = "0.9.3"
-sdl2 = {version = "0.37.0", features = ["bundled"] }
+sdl2 = "0.37.0"
 time = "0.3.41"
+
+# Easiest to bundle on windows since theres not a super easy way to install
+[target.'cfg(windows)'.dependencies]
+sdl2 = { version = "0.37.0", features = ["bundled"] }
+
+[dev-dependencies]
+ntest = "0.9.3"
