@@ -27,14 +27,16 @@ A simple Game Boy emulator written in Rust.
 3. Run the emulator with a ROM:
 
     ```bash
-    cargo run --release -- path/to/rom.gb
+    cargo run --release
     ```
 
-Working on a clearer deployment system, likely by implementing the github release feature.
+4. Select a ROM \
+Load a rom by pressing L on the opened window for the ROM path prompt
 
 ## Requirements
 
 - Rust (latest stable)
+- SDL2 or Docker
 
 ## Running Tests
 
@@ -58,9 +60,7 @@ To build and run tests locally:
 - Implement handling of poisoned Mutexes
 - Implement full multithreading
 - Modify register system to allow them to be set more gracefully
-- Add DOCKERFILE to containerize (annoyed me when sdl2 wasn't installing)
-- Trim workflow to reflect new docker container
-- Implement custom cpu opcode handling
+- Implement library features for emulator and drop sdl to allow for apps to implement on top of the emulator
 
 ## Acknowledgements
 
