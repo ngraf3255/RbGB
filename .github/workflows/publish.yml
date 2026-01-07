@@ -39,7 +39,6 @@ jobs:
   release-plz-pr:
     name: Release-plz PR
     runs-on: ubuntu-latest
-    environment: crates-io
     permissions:
       contents: write
       pull-requests: write
