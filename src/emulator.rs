@@ -3,7 +3,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::types::{CURRENT_SCANLINE, GameInput, INPUT_REGISTER, KeyState, LCD_CONTROL};
+use crate::types::{GameInput, KeyState};
 use debug_print::debug_println;
 
 mod cpu;
@@ -87,22 +87,29 @@ impl Emulator {
     }
 
     pub fn dump_lcd_mem(&self) {
+        #[cfg(debug_assertions)]
         let mem = self.memory.lock().unwrap();
 
         debug_println!("IDK: {:X}", mem.read_byte_forced(0xFF26));
-        debug_println!("LCD Control: {:X}", mem.read_byte_forced(LCD_CONTROL));
+        debug_println!(
+            "LCD Control: {:X}",
+            mem.read_byte_forced(crate::types::LCD_CONTROL)
+        );
         debug_println!("Scroll Y: {:X}", mem.read_byte_forced(0xFF42));
         debug_println!("Scroll X: {:X}", mem.read_byte_forced(0xFF43));
         debug_println!("BG Palette: {:X}", mem.read_byte_forced(0xFF47));
         debug_println!("OBJ palette: {:X}", mem.read_byte_forced(0xFF48));
         debug_println!(
             "Current Scanline: {:X}",
-            mem.read_byte_forced(CURRENT_SCANLINE)
+            mem.read_byte_forced(crate::types::CURRENT_SCANLINE)
         );
-        debug_println!("LCD Control: {:X}", mem.read_byte_forced(LCD_CONTROL));
+        debug_println!(
+            "LCD Control: {:X}",
+            mem.read_byte_forced(crate::types::LCD_CONTROL)
+        );
         debug_println!(
             "Joystick Register: 0x{:X}",
-            mem.read_byte_forced(INPUT_REGISTER)
+            mem.read_byte_forced(crate::types::INPUT_REGISTER)
         );
     }
 
