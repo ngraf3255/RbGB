@@ -1,3 +1,4 @@
+#[cfg(feature = "gui")]
 extern crate sdl2;
 
 mod emulator;
