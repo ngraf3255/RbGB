@@ -8,6 +8,7 @@ A simple Game Boy emulator written in Rust.
 - Shared Memory bank
 - Basic graphics rendering
 - ROM loading
+- Dependency free (emulator lib)
 
 ## Repo Basics
 
@@ -29,7 +30,7 @@ Before running this project ensure SDL2 is installed if you are not running with
 3. Run the emulator:
 
     ```bash
-    cargo run --release
+    cargo run --release --features gui
     ```
 
 4. Select a ROM \
