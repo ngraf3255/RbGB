@@ -13,7 +13,7 @@ name = "rbgb"
 path = "src/lib.rs"
 
 [[bin]]
-name = "emulator_executable"
+name = "rbgb"
 path = "src/main.rs"
 
 [dependencies]
@@ -25,6 +25,10 @@ time = "0.3.41"
 # Easiest to bundle on windows since theres not a super easy way to install
 [target.'cfg(windows)'.dependencies]
 sdl2 = { version = "0.37.0", features = ["bundled"] }
+
+[target.'cfg(windows)']
+rustflags = ["-C", "link-arg=/STACK:8388608"]
+
 
 [dev-dependencies]
 ntest = "0.9.3"
