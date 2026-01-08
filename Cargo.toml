@@ -13,7 +13,7 @@ name = "rbgb"
 path = "src/lib.rs"
 
 [[bin]]
-name = "emulator_executable"
+name = "rbgb"
 path = "src/main.rs"
 
 [dependencies]
