@@ -26,9 +26,5 @@ time = "0.3.41"
 [target.'cfg(windows)'.dependencies]
 sdl2 = { version = "0.37.0", features = ["bundled"] }
 
-[target.'cfg(windows)']
-rustflags = ["-C", "link-arg=/STACK:8388608"]
-
-
 [dev-dependencies]
 ntest = "0.9.3"
