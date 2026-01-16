@@ -3,8 +3,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+use crate::debug_println;
 use crate::types::{GameInput, KeyState};
-use debug_print::debug_println;
 
 mod cpu;
 mod graphics;
@@ -76,10 +76,8 @@ impl Emulator {
             return;
         }
         let frame_start = Instant::now();
-        // debug_println!("Main Loop");
         let mut num_cycles: u32 = 0;
         while num_cycles < Self::MAXCYCLES {
-            //debug_println!("Program Counter: 0x{:X}", self.cpu.registers.val_pc());
             let cycles = self.cpu.execute_next_opcode(false);
             num_cycles += cycles as u32;
             self.cpu.timers.update_timers(cycles as i32);

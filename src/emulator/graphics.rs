@@ -1,7 +1,3 @@
-#![allow(dead_code)]
-#[allow(unused_imports)]
-use debug_print::debug_println;
-
 use crate::emulator::mem::*;
 use crate::types::*;
 
@@ -26,70 +22,18 @@ impl Screen {
         }
     }
 
-    pub fn clear(&mut self, color: u8) {
-        let (r, g, b) = Self::color_to_rgb(color);
-        for chunk in self.buffer.chunks_mut(3) {
-            chunk[0] = r;
-            chunk[1] = g;
-            chunk[2] = b;
-        }
-    }
-
-    pub fn set_pixel(&mut self, x: usize, y: usize, color: u8) {
-        if x >= SCREEN_WIDTH as usize || y >= SCREEN_HEIGHT as usize {
-            return;
-        }
-        let idx = (y * SCREEN_WIDTH as usize + x) * 3;
-        let (r, g, b) = Self::color_to_rgb(color);
-        self.buffer[idx] = r;
-        self.buffer[idx + 1] = g;
-        self.buffer[idx + 2] = b;
-    }
-
-    pub fn get_pixel(&self, x: usize, y: usize) -> u8 {
-        if x >= SCREEN_WIDTH as usize || y >= SCREEN_HEIGHT as usize {
-            return 0;
-        }
-        let idx = (y * SCREEN_WIDTH as usize + x) * 3;
-        let r = self.buffer[idx];
-        let g = self.buffer[idx + 1];
-        let b = self.buffer[idx + 2];
-        Self::rgb_to_color(r, g, b)
-    }
-    fn color_to_rgb(color: u8) -> (u8, u8, u8) {
-        match color {
-            0 => (255, 255, 255),
-            1 => (0xCC, 0xCC, 0xCC),
-            2 => (0x77, 0x77, 0x77),
-            _ => (0, 0, 0),
-        }
-    }
-
-    fn rgb_to_color(r: u8, g: u8, b: u8) -> u8 {
-        match (r, g, b) {
-            (255, 255, 255) => 0,
-            (0xCC, 0xCC, 0xCC) => 1,
-            (0x77, 0x77, 0x77) => 2,
-            _ => 3,
-        }
-    }
-
     pub fn update_screen(&mut self, cycles: i32) {
-        // debug_println!("Screen update!");
-
         self.set_lcd_status();
 
         if self.is_lcd_enabled() {
             self.scanline_counter -= cycles;
         } else {
             // LCD is not enabled so do nothing
-            //debug_println!("LCD Disabled");
             return;
         }
 
         let mut mem = self.device_memory.lock().unwrap();
 
-        // debug_println!("Check scanlines!");
         if self.scanline_counter <= 0 {
             // Time to move onto the next scanline
             let scanline = mem.read_byte(CURRENT_SCANLINE).wrapping_add(1);
@@ -98,7 +42,6 @@ impl Screen {
             self.scanline_counter = 456;
 
             // we are now in the vertical blank period
-            // debug_println!("Current Scanline is {scanline}");
             if scanline == 144 {
                 mem.request_interrupt(0);
             }
@@ -132,7 +75,6 @@ impl Screen {
     }
 
     fn render_tiles(&mut self, control: Byte) {
-        // debug_println!("Rendering tile, control: {:b}", control);
         let mem = self.device_memory.lock().unwrap();
 
         let mut unsigned = true;
@@ -211,7 +153,6 @@ impl Screen {
             }
 
             let idx = (current_line as usize * SCREEN_WIDTH as usize + pixel as usize) * 3;
-            //debug_println!("Writing idx: {idx}");
             self.buffer[idx] = red;
             self.buffer[idx + 1] = green;
             self.buffer[idx + 2] = blue;
@@ -333,8 +274,6 @@ impl Screen {
     }
 
     fn set_lcd_status(&mut self) {
-        // debug_println!("Updating LCD Status!");
-
         let lcd_enabled = self.is_lcd_enabled();
         // Gets lock on memory
         let mut mem = self.device_memory.lock().unwrap();
@@ -358,8 +297,6 @@ impl Screen {
 
         let mode;
         let mut require_interrupt = false;
-
-        // debug_println!("Current scanline is {current_line} and mode is {current_mode}");
 
         // in vblank so mode is set to 1
         if current_line >= 144 {
@@ -408,11 +345,8 @@ impl Screen {
 
     fn is_lcd_enabled(&mut self) -> bool {
         // Check bit 7 of LCD Control register (0xFF40)
-        // debug_println!("Checking if LCD is enabled");
         let mem = self.device_memory.lock().unwrap();
-        // debug_println!("Lock aquired");
         mem.read_byte(LCD_CONTROL) & (1 << 7) != 0
-        // debug_println!("Check complete");
     }
 
     // TODO: Add more methods for drawing, sprites, etc.

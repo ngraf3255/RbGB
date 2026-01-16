@@ -1,7 +1,4 @@
 //! Contains all code for interfacing io to the gameboy
-
-use debug_print::debug_println;
-
 use crate::types::{GameInput, KeyState};
 
 use super::mem::SharedMemory;
@@ -34,7 +31,6 @@ impl Joypad {
 
     /// Takes the input and affects the associated memory value with what it should be
     pub fn log_input(&mut self, input: GameInput, val: KeyState) {
-        debug_println!("Registering input: {:?}", input);
         match input {
             // mode 0 buttons
             GameInput::A => self.a = val,
