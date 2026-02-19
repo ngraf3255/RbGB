@@ -1,16 +1,12 @@
-use std::{
-    ops::BitAnd,
-    sync::{Arc, Mutex},
-};
+use core::ops::BitAnd;
 
 /// Functions and storage for operating on device memory
 use crate::types::*;
 
-pub type SharedMemory = Arc<Mutex<Memory>>;
-
 pub struct Memory {
     mem: Ram,
-    rom: Vec<Byte>,
+    rom: [Byte; MAX_ROM_SIZE],
+    rom_len: usize,
     external_ram: [[Byte; 0x2000]; 4],
     rom_banking_type: RomBankingType,
     rom_banks: CurrentRomBank,
@@ -33,7 +29,8 @@ impl Memory {
     pub fn new() -> Self {
         Memory {
             mem: [0; MEM_SIZE],
-            rom: Vec::new(),
+            rom: [0; MAX_ROM_SIZE],
+            rom_len: 0,
             external_ram: [[0; 0x2000]; 4],
             rom_banking_type: RomBankingType::None,
             rom_banks: CurrentRomBank::Bank(1),
@@ -106,10 +103,12 @@ impl Memory {
     pub fn write_byte_forced(&mut self, addr: Word, value: Byte) {
         if addr < 0x8000 {
             let index = addr as usize;
-            if self.rom.len() <= index {
-                self.rom.resize(index + 1, 0);
+            if index < MAX_ROM_SIZE {
+                self.rom[index] = value;
+                if self.rom_len <= index {
+                    self.rom_len = index + 1;
+                }
             }
-            self.rom[index] = value;
         } else if (0xA000..=0xBFFF).contains(&addr) {
             let offset = (addr - 0xA000) as usize;
             let bank = self.ram_banks as usize;
@@ -318,8 +317,10 @@ impl Memory {
     /// Loads the given ROM bytes into memory
     pub fn load_rom_data(&mut self, data: &[u8]) {
         self.mem.fill(0); // clear VRAM, WRAM, OAM, I/O mirrors
-        self.rom.clear();
-        self.rom.extend_from_slice(data);
+        self.rom.fill(0);
+        let copy_len = core::cmp::min(data.len(), MAX_ROM_SIZE);
+        self.rom[..copy_len].copy_from_slice(&data[..copy_len]);
+        self.rom_len = copy_len;
         self.external_ram = [[0; 0x2000]; 4];
 
         self.rom_banks = CurrentRomBank::Bank(1);
@@ -377,15 +378,14 @@ impl Memory {
     }
 
     fn read_rom_byte(&self, index: usize) -> Byte {
-        if self.rom.is_empty() {
+        if self.rom_len == 0 {
             if index < self.mem.len() {
                 self.mem[index]
             } else {
                 0
             }
         } else {
-            let len = self.rom.len();
-            let masked = index % len;
+            let masked = index % self.rom_len;
             self.rom[masked]
         }
     }

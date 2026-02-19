@@ -4,7 +4,6 @@ use crate::types::*;
 /// Basic implementation and methods for the LCD Screen
 pub struct Screen {
     scanline_counter: i32,
-    device_memory: SharedMemory, // 64KB address space
 
     //buffer is of size (h * w * 3)
     //buffer can be indexed as (h + (w*3))
@@ -12,27 +11,24 @@ pub struct Screen {
 }
 
 impl Screen {
-    pub fn new(mem: SharedMemory) -> Self {
+    pub fn new() -> Self {
         // TODO: Initialize the screen buffer
         Screen {
             buffer: [0; (SCREEN_HEIGHT * SCREEN_WIDTH * 3) as usize],
 
             scanline_counter: 456,
-            device_memory: mem,
         }
     }
 
-    pub fn update_screen(&mut self, cycles: i32) {
-        self.set_lcd_status();
+    pub fn update_screen(&mut self, mem: &mut Memory, cycles: i32) {
+        self.set_lcd_status(mem);
 
-        if self.is_lcd_enabled() {
+        if self.is_lcd_enabled(mem) {
             self.scanline_counter -= cycles;
         } else {
             // LCD is not enabled so do nothing
             return;
         }
-
-        let mut mem = self.device_memory.lock().unwrap();
 
         if self.scanline_counter <= 0 {
             // Time to move onto the next scanline
@@ -51,32 +47,26 @@ impl Screen {
             }
             // Otherwise we draw the current line
             else if scanline < 144 {
-                // We are done with the lock
-                drop(mem);
-                self.draw_scanline();
+                self.draw_scanline(mem);
             }
         }
     }
 
-    fn draw_scanline(&mut self) {
-        let mem = self.device_memory.lock().unwrap();
+    fn draw_scanline(&mut self, mem: &Memory) {
         let control = mem.read_byte(LCD_CONTROL);
-        drop(mem);
 
         if control & (1 << 7) != 0 {
             if control & 0x1 != 0 {
-                self.render_tiles(control);
+                self.render_tiles(mem, control);
             }
 
             if control & 0x2 != 0 {
-                self.render_sprites(control);
+                self.render_sprites(mem, control);
             }
         }
     }
 
-    fn render_tiles(&mut self, control: Byte) {
-        let mem = self.device_memory.lock().unwrap();
-
+    fn render_tiles(&mut self, mem: &Memory, control: Byte) {
         let mut unsigned = true;
         let tile_data = if control & (1 << 4) != 0 {
             0x8000
@@ -159,9 +149,7 @@ impl Screen {
         }
     }
 
-    fn render_sprites(&mut self, control: Byte) {
-        let mem = self.device_memory.lock().unwrap();
-
+    fn render_sprites(&mut self, mem: &Memory, control: Byte) {
         // test if display is enabled
         if control & 0x2 != 0 {
             let mut use8x16 = false;
@@ -273,10 +261,8 @@ impl Screen {
         }
     }
 
-    fn set_lcd_status(&mut self) {
-        let lcd_enabled = self.is_lcd_enabled();
-        // Gets lock on memory
-        let mut mem = self.device_memory.lock().unwrap();
+    fn set_lcd_status(&mut self, mem: &mut Memory) {
+        let lcd_enabled = self.is_lcd_enabled(mem);
 
         let mut status = mem.read_byte(LCD_STATUS);
 
@@ -343,9 +329,8 @@ impl Screen {
         mem.write_byte(LCD_STATUS, status);
     }
 
-    fn is_lcd_enabled(&mut self) -> bool {
+    fn is_lcd_enabled(&self, mem: &Memory) -> bool {
         // Check bit 7 of LCD Control register (0xFF40)
-        let mem = self.device_memory.lock().unwrap();
         mem.read_byte(LCD_CONTROL) & (1 << 7) != 0
     }
 
@@ -356,47 +341,37 @@ impl Screen {
 mod test {
     use super::*;
     use ntest::timeout;
-    use std::sync::{Arc, Mutex};
 
     #[test]
     #[timeout(10)]
     fn test_is_lcd_enabled() {
-        let mem = Arc::new(Mutex::new(Memory::new()));
-        {
-            let mut m = mem.lock().unwrap();
-            m.write_byte(LCD_CONTROL, 0x80);
-        }
-        let mut screen = Screen::new(Arc::clone(&mem));
-        assert!(screen.is_lcd_enabled());
+        let mut mem = Memory::new();
+        mem.write_byte(LCD_CONTROL, 0x80);
+        let screen = Screen::new();
+        assert!(screen.is_lcd_enabled(&mem));
 
-        {
-            let mut m = mem.lock().unwrap();
-            m.write_byte(LCD_CONTROL, 0x00);
-        }
-        assert!(!screen.is_lcd_enabled());
+        mem.write_byte(LCD_CONTROL, 0x00);
+        assert!(!screen.is_lcd_enabled(&mem));
     }
 
     #[test]
     #[timeout(10)]
     fn test_render_tile_indexing() {
-        let mem = Arc::new(Mutex::new(Memory::new()));
-        mem.lock().unwrap().ram_startup();
-        let mut screen = Screen::new(Arc::clone(&mem));
+        let mut mem = Memory::new();
+        mem.ram_startup();
+        let mut screen = Screen::new();
 
-        {
-            let mut m = mem.lock().unwrap();
-            m.write_byte_forced(CURRENT_SCANLINE, 1);
-            m.write_byte_forced(0xFF42, 0);
-            m.write_byte_forced(0xFF43, 0);
-            m.write_byte_forced(0xFF4A, 0);
-            m.write_byte_forced(0xFF4B, 7);
-            m.write_byte_forced(0xFF47, 0);
-            m.write_byte_forced(0x9800, 0);
-            m.write_byte_forced(0x8000, 0);
-            m.write_byte_forced(0x8001, 0);
-        }
+        mem.write_byte_forced(CURRENT_SCANLINE, 1);
+        mem.write_byte_forced(0xFF42, 0);
+        mem.write_byte_forced(0xFF43, 0);
+        mem.write_byte_forced(0xFF4A, 0);
+        mem.write_byte_forced(0xFF4B, 7);
+        mem.write_byte_forced(0xFF47, 0);
+        mem.write_byte_forced(0x9800, 0);
+        mem.write_byte_forced(0x8000, 0);
+        mem.write_byte_forced(0x8001, 0);
 
-        screen.render_tiles(0x31);
+        screen.render_tiles(&mem, 0x31);
 
         let correct = (SCREEN_WIDTH as usize) * 3;
         assert_eq!(screen.buffer[correct], 255);

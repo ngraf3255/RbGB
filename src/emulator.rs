@@ -1,9 +1,3 @@
-use std::{
-    sync::{Arc, Mutex},
-    time::{Duration, Instant},
-};
-
-use crate::debug_println;
 use crate::types::{GameInput, KeyState};
 
 mod cpu;
@@ -24,7 +18,6 @@ pub struct Emulator {
     screen: graphics::Screen,
     cpu: cpu::CPU,
     joypad: joypad::Joypad,
-    memory: mem::SharedMemory,
     paused: bool,
 }
 
@@ -40,11 +33,6 @@ impl Emulator {
     /// This matches the approximate number of cycles a Game Boy runs in one
     /// video frame. The update loop runs until this budget is reached.
     const MAXCYCLES: u32 = 69905;
-    /// Target duration for a single frame (approx. 59.7 Hz).
-    ///
-    /// The update loop sleeps to align with this duration after processing
-    /// enough CPU cycles.
-    const FRAME_DURATION: Duration = Duration::from_nanos(16_741_000);
 
     /// Create a new emulator instance with initialized subsystems.
     ///
@@ -53,39 +41,28 @@ impl Emulator {
     ///
     /// Returns a ready-to-use `Emulator` in the paused state.
     pub fn new() -> Self {
-        let mem = Arc::new(Mutex::new(mem::Memory::new()));
-        mem.lock().unwrap().ram_startup();
-        Emulator {
-            screen: graphics::Screen::new(Arc::clone(&mem)),
-            cpu: cpu::CPU::new(Arc::clone(&mem)),
-            joypad: joypad::Joypad::new(Arc::clone(&mem)),
-            memory: mem,
-            paused: true,
-        }
+        let mut cpu = cpu::CPU::new();
+        cpu.memory_mut().ram_startup();
+        Emulator { screen: graphics::Screen::new(), cpu, joypad: joypad::Joypad::new(), paused: true }
     }
 
     /// Execute one frame of emulation if not paused.
     ///
     /// Runs CPU instructions, updates timers and graphics, and handles
-    /// interrupts until the frame's cycle budget is consumed. The function then
-    /// sleeps to maintain the target frame rate.
+    /// interrupts until the frame's cycle budget is consumed.
     ///
     /// Returns `()` and has no effect if the emulator is paused.
     pub fn update(&mut self) {
         if self.paused {
             return;
         }
-        let frame_start = Instant::now();
         let mut num_cycles: u32 = 0;
         while num_cycles < Self::MAXCYCLES {
             let cycles = self.cpu.execute_next_opcode(false);
             num_cycles += cycles as u32;
-            self.cpu.timers.update_timers(cycles as i32);
-            self.screen.update_screen(cycles as i32);
+            self.cpu.update_timers(cycles as i32);
+            self.screen.update_screen(self.cpu.memory_mut(), cycles as i32);
             self.cpu.handle_interrupts();
-        }
-        if let Some(remaining) = Self::FRAME_DURATION.checked_sub(frame_start.elapsed()) {
-            std::thread::sleep(remaining);
         }
     }
 
@@ -107,6 +84,16 @@ impl Emulator {
         self.paused
     }
 
+    /// Load ROM data and reset CPU/memory state.
+    pub fn load_rom_data(&mut self, data: &[u8]) {
+        let mem = self.cpu.memory_mut();
+        mem.load_rom_data(data);
+        mem.ram_startup();
+        self.cpu.reset();
+        self.paused = false;
+    }
+
+    #[cfg(feature = "std")]
     /// Load a ROM from disk and reset the CPU and memory state.
     ///
     /// The ROM contents are copied into memory, memory is reinitialized, and
@@ -116,14 +103,9 @@ impl Emulator {
     /// - `path`: filesystem path to the ROM file.
     ///
     /// Returns `Ok(())` on success or a string I/O error on failure.
-    pub fn load_rom(&mut self, path: &str) -> Result<(), String> {
+    pub fn load_rom(&mut self, path: &str) -> Result<(), std::string::String> {
         let data = std::fs::read(path).map_err(|e| e.to_string())?;
-        let mut mem = self.memory.lock().unwrap();
-        mem.load_rom_data(&data);
-        mem.ram_startup();
-        self.cpu.reset();
-
-        self.paused = false;
+        self.load_rom_data(&data);
         Ok(())
     }
 
@@ -137,37 +119,28 @@ impl Emulator {
         &self.screen.buffer
     }
 
-    /// Dump key LCD and input registers for debugging.
-    ///
-    /// This is only compiled in debug builds and logs directly to stdout via
-    /// `debug_println`. If not compiled for debug this function does nothing.
-    ///
-    /// Takes `&self` and returns `()`. All details are dumped to the console
     pub fn dump_lcd_mem(&self) {
-        #[cfg(debug_assertions)]
-        let mem = self.memory.lock().unwrap();
-
-        debug_println!("IDK: {:X}", mem.read_byte_forced(0xFF26));
-        debug_println!(
-            "LCD Control: {:X}",
-            mem.read_byte_forced(crate::types::LCD_CONTROL)
-        );
-        debug_println!("Scroll Y: {:X}", mem.read_byte_forced(0xFF42));
-        debug_println!("Scroll X: {:X}", mem.read_byte_forced(0xFF43));
-        debug_println!("BG Palette: {:X}", mem.read_byte_forced(0xFF47));
-        debug_println!("OBJ palette: {:X}", mem.read_byte_forced(0xFF48));
-        debug_println!(
-            "Current Scanline: {:X}",
-            mem.read_byte_forced(crate::types::CURRENT_SCANLINE)
-        );
-        debug_println!(
-            "LCD Control: {:X}",
-            mem.read_byte_forced(crate::types::LCD_CONTROL)
-        );
-        debug_println!(
-            "Joystick Register: 0x{:X}",
-            mem.read_byte_forced(crate::types::INPUT_REGISTER)
-        );
+        #[cfg(feature = "std")]
+        {
+            let mem = self.cpu.memory();
+            println!("IDK: {:X}", mem.read_byte_forced(0xFF26));
+            println!(
+                "LCD Control: {:X}",
+                mem.read_byte_forced(crate::types::LCD_CONTROL)
+            );
+            println!("Scroll Y: {:X}", mem.read_byte_forced(0xFF42));
+            println!("Scroll X: {:X}", mem.read_byte_forced(0xFF43));
+            println!("BG Palette: {:X}", mem.read_byte_forced(0xFF47));
+            println!("OBJ palette: {:X}", mem.read_byte_forced(0xFF48));
+            println!(
+                "Current Scanline: {:X}",
+                mem.read_byte_forced(crate::types::CURRENT_SCANLINE)
+            );
+            println!(
+                "Joystick Register: 0x{:X}",
+                mem.read_byte_forced(crate::types::INPUT_REGISTER)
+            );
+        }
     }
 
     /// Handle input for the emulator's joypad.
@@ -181,6 +154,53 @@ impl Emulator {
     ///
     /// Returns `()`.
     pub fn game_input(&mut self, input: GameInput, val: KeyState) {
-        self.joypad.log_input(input, val)
+        self.joypad.log_input(self.cpu.memory_mut(), input, val)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Emulator;
+    use crate::types::{GameInput, INPUT_REGISTER, KeyState};
+
+    #[test]
+    fn new_starts_paused() {
+        let emu = Emulator::new();
+        assert!(emu.is_paused());
+    }
+
+    #[test]
+    fn load_rom_data_unpauses_and_resets_memory() {
+        let mut emu = Emulator::new();
+        let rom = [0x31, 0xFE, 0xFF, 0xAF];
+        emu.load_rom_data(&rom);
+
+        assert!(!emu.is_paused());
+
+        let mem = emu.cpu.memory();
+        assert_eq!(mem.read_byte(0x0000), 0x31);
+        assert_eq!(mem.read_byte(0x0001), 0xFE);
+        assert_eq!(mem.read_byte(0x0002), 0xFF);
+        assert_eq!(mem.read_byte(0x0003), 0xAF);
+
+        // startup register values should be restored after load
+        assert_eq!(mem.read_byte(0xFF40), 0x91);
+        assert_eq!(mem.read_byte(0xFF47), 0xFC);
+    }
+
+    #[test]
+    fn game_input_updates_joypad_memory() {
+        let mut emu = Emulator::new();
+        emu.load_rom_data(&[]);
+
+        // Select button group and initialize lower nibble as released.
+        emu.cpu
+            .memory_mut()
+            .write_byte_forced(INPUT_REGISTER, 0xDF);
+
+        emu.game_input(GameInput::A, KeyState::Pressed);
+
+        let jp = emu.cpu.memory().read_byte_forced(INPUT_REGISTER);
+        assert_eq!(jp & 0x0F, 0x0E);
     }
 }

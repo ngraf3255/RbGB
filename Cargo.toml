@@ -21,7 +21,9 @@ required-features = ["gui"]
 sdl2 = { version = "0.37.0", optional = true }
 
 [features]
-gui = ["sdl2"]
+default = ["std", "gui"]
+std = []
+gui = ["std", "sdl2"]
 
 # Easiest to bundle on windows since theres not a super easy way to install
 [target.'cfg(windows)'.dependencies]

@@ -1,4 +1,4 @@
-use crate::emulator::mem::SharedMemory;
+use crate::emulator::mem::Memory;
 use crate::types::{DIVIDER_REGISTER, IE, IF, TIMA, TMA, TMC};
 use registers::{
     CpuFlag::{C, H, N, Z},
@@ -23,12 +23,12 @@ pub struct CPU {
 }
 
 impl CPU {
-    pub fn new(mem: SharedMemory) -> CPU {
+    pub fn new() -> CPU {
         let registers = Registers::new();
-        let timers = Timer::new(mem.clone());
+        let timers = Timer::new();
         CPU {
             reg: registers,
-            mmu: MemoryAdapter::new(mem),
+            mmu: MemoryAdapter::new(),
             timers,
             halted: false,
             halt_bug: false,
@@ -53,6 +53,19 @@ impl CPU {
 
     pub fn handle_interrupts(&mut self) {
         self.handleinterrupt();
+    }
+
+    pub fn update_timers(&mut self, cycles: i32) {
+        self.timers.update_timers(&mut self.mmu.mem, cycles);
+    }
+
+    #[cfg(feature = "std")]
+    pub fn memory(&self) -> &Memory {
+        &self.mmu.mem
+    }
+
+    pub fn memory_mut(&mut self) -> &mut Memory {
+        &mut self.mmu.mem
     }
 
     fn docycle(&mut self) -> u32 {
@@ -2533,30 +2546,29 @@ impl CPU {
     }
 }
 
-#[derive(Clone)]
 struct MemoryAdapter {
-    mem: SharedMemory,
+    mem: Memory,
 }
 
 impl MemoryAdapter {
-    fn new(mem: SharedMemory) -> Self {
-        Self { mem }
+    fn new() -> Self {
+        Self { mem: Memory::new() }
     }
 
     fn rb(&self, address: u16) -> u8 {
-        self.mem.lock().unwrap().read_byte(address)
+        self.mem.read_byte(address)
     }
 
-    fn wb(&self, address: u16, value: u8) {
-        self.mem.lock().unwrap().write_byte(address, value);
+    fn wb(&mut self, address: u16, value: u8) {
+        self.mem.write_byte(address, value);
     }
 
     fn rw(&self, address: u16) -> u16 {
-        self.mem.lock().unwrap().read_word(address)
+        self.mem.read_word(address)
     }
 
-    fn ww(&self, address: u16, value: u16) {
-        self.mem.lock().unwrap().write_word(address, value);
+    fn ww(&mut self, address: u16, value: u16) {
+        self.mem.write_word(address, value);
     }
 
     fn read_ie(&self) -> u8 {
@@ -2567,7 +2579,7 @@ impl MemoryAdapter {
         self.rb(IF)
     }
 
-    fn write_if(&self, value: u8) {
+    fn write_if(&mut self, value: u8) {
         self.wb(IF, value);
     }
 
@@ -2575,23 +2587,18 @@ impl MemoryAdapter {
 }
 
 pub struct Timer {
-    mem: SharedMemory,
     divider_counter: u32,
 }
 
 impl Timer {
-    pub fn new(mem: SharedMemory) -> Self {
-        Timer {
-            mem,
-            divider_counter: 0,
-        }
+    pub fn new() -> Self {
+        Timer { divider_counter: 0 }
     }
 
-    pub fn update_timers(&mut self, cycles: i32) {
-        self.do_divider_registers(cycles);
+    pub fn update_timers(&mut self, mem: &mut Memory, cycles: i32) {
+        self.do_divider_registers(mem, cycles);
 
-        if self.is_clock_enabled() {
-            let mut mem = self.mem.lock().unwrap();
+        if Self::is_clock_enabled(mem) {
             mem.timer_counter -= cycles;
 
             if mem.timer_counter <= 0 {
@@ -2609,19 +2616,16 @@ impl Timer {
         }
     }
 
-    fn do_divider_registers(&mut self, cycles: i32) {
+    fn do_divider_registers(&mut self, mem: &mut Memory, cycles: i32) {
         self.divider_counter += cycles as u32;
         if self.divider_counter >= 255 {
             self.divider_counter = 0;
-
-            let mut mem = self.mem.lock().unwrap();
             let divider_register = mem.read_byte_forced(DIVIDER_REGISTER).wrapping_add(1);
             mem.write_byte_forced(DIVIDER_REGISTER, divider_register);
         }
     }
 
-    fn is_clock_enabled(&self) -> bool {
-        let mem = self.mem.lock().unwrap();
+    fn is_clock_enabled(mem: &Memory) -> bool {
         let tmc_reg = mem.read_byte(TMC);
         tmc_reg & 0x4 != 0
     }
