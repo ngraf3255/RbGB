@@ -775,4 +775,42 @@ mod test {
         }
         assert_eq!(mem.read_byte(0x8000), 0);
     }
+
+    #[test]
+    #[timeout(10)]
+    fn test_write_byte_forced_sets_rom_len_and_reads_back() {
+        let mut mem = Memory::new();
+
+        mem.write_byte_forced(0x1234, 0x5A);
+        assert_eq!(mem.rom_len, 0x1235);
+        assert_eq!(mem.read_byte(0x1234), 0x5A);
+
+        mem.write_byte_forced(0x3FFF, 0x99);
+        assert_eq!(mem.rom_len, 0x4000);
+        assert_eq!(mem.read_byte(0x3FFF), 0x99);
+    }
+
+    #[test]
+    #[timeout(10)]
+    fn test_load_rom_data_resets_banking_state() {
+        let mut mem = Memory::new();
+        mem.ram_startup();
+
+        mem.write_byte_forced(0x147, 1);
+        mem.refresh_rom_banking_type();
+        mem.write_byte(0x0001, 0x0A);
+        mem.write_byte(0x6000, 1);
+        mem.write_byte(0x4000, 2);
+
+        assert!(mem.ram_write_enable);
+        assert!(!mem.rom_bank_enable);
+        assert_eq!(mem.ram_banks, CurrentRamBank::Bank2);
+
+        mem.load_rom_data(&[0x00, 0x01, 0x02, 0x03]);
+
+        assert_eq!(mem.rom_banks, CurrentRomBank::Bank(1));
+        assert_eq!(mem.ram_banks, CurrentRamBank::Bank0);
+        assert!(mem.rom_bank_enable);
+        assert!(!mem.ram_write_enable);
+    }
 }
