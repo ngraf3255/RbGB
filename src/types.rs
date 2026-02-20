@@ -59,6 +59,7 @@ pub enum Color {
 
 /// RAM  Device Memory
 pub const MEM_SIZE: usize = 0x10000;
+pub const MAX_ROM_SIZE: usize = 0x80000; // 512 KiB
 
 //Likely at some point will switch the RAM and ROM to be part of the Emulator struct
 
@@ -96,14 +97,6 @@ pub enum CurrentRamBank {
     Bank1,
     Bank2,
     Bank3,
-}
-
-/// Prints to the standard ouput only in debug build.  
-/// In release build this macro is not compiled thanks to `#[cfg(debug_assertions)]`.  
-/// see [https://doc.rust-lang.org/std/macro.println.html](https://doc.rust-lang.org/std/macro.println.html) for more info.
-#[macro_export]
-macro_rules! debug_println {
-    ($($arg:tt)*) => (#[cfg(debug_assertions)] println!($($arg)*));
 }
 
 #[cfg(test)]

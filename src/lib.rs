@@ -1,3 +1,4 @@
+#![cfg_attr(not(feature = "std"), no_std)]
 //! Game Boy emulator core.
 //!
 //! This crate provides the core emulation loop and subsystems for a classic
@@ -11,8 +12,8 @@
 //! - Provide input through [`Emulator::game_input`], and read pixels from
 //!   [`Emulator::get_display_buffer`].
 //!
-//! The emulation state is backed by shared memory (`Arc<Mutex<...>>`) so the
-//! CPU, graphics, and joypad stay in sync with memory-mapped I/O.
+//! The emulation state is shared across CPU, graphics, and joypad through a
+//! single memory model owned by the emulator core.
 //!
 //! # Example
 //! ```no_run
