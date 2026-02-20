@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1](https://github.com/ngraf3255/RbGB/compare/v0.2.0...v0.2.1) - 2026-02-20
+
+### Other
+
+- Switched core emulator library to `no_std` ([#32](https://github.com/ngraf3255/RbGB/pull/32))
+- General cleanup and dependency removal ([#31](https://github.com/ngraf3255/RbGB/pull/31))
+- Changed binary name ([#29](https://github.com/ngraf3255/RbGB/pull/29))
+
 ## [0.2.0](https://github.com/ngraf3255/RbGB/compare/v0.1.2...v0.2.0) - 2026-01-07
 
 ### Other
