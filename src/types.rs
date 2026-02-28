@@ -99,6 +99,11 @@ pub enum CurrentRamBank {
     Bank3,
 }
 
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum Error {
+    ColorReadError,
+}
+
 #[cfg(test)]
 mod test {
     use super::*;

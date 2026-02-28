@@ -1,4 +1,5 @@
 #![cfg_attr(not(feature = "std"), no_std)]
+#![deny(missing_docs)]
 //! Game Boy emulator core.
 //!
 //! This crate provides the core emulation loop and subsystems for a classic
@@ -29,6 +30,8 @@
 //!     }
 //! }
 //! ```
+
+/// The main emulator core
 pub mod emulator;
 mod types;
 
