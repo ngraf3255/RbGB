@@ -43,7 +43,12 @@ impl Emulator {
     pub fn new() -> Self {
         let mut cpu = cpu::CPU::new();
         cpu.memory_mut().ram_startup();
-        Emulator { screen: graphics::Screen::new(), cpu, joypad: joypad::Joypad::new(), paused: true }
+        Emulator {
+            screen: graphics::Screen::new(),
+            cpu,
+            joypad: joypad::Joypad::new(),
+            paused: true,
+        }
     }
 
     /// Execute one frame of emulation if not paused.
@@ -61,7 +66,8 @@ impl Emulator {
             let cycles = self.cpu.execute_next_opcode(false);
             num_cycles += cycles as u32;
             self.cpu.update_timers(cycles as i32);
-            self.screen.update_screen(self.cpu.memory_mut(), cycles as i32);
+            self.screen
+                .update_screen(self.cpu.memory_mut(), cycles as i32);
             self.cpu.handle_interrupts();
         }
     }
@@ -119,6 +125,7 @@ impl Emulator {
         &self.screen.buffer
     }
 
+    /// Prints our all relevant memory locations into the stdout
     pub fn dump_lcd_mem(&self) {
         #[cfg(feature = "std")]
         {

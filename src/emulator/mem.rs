@@ -49,7 +49,9 @@ impl Memory {
         self.read_byte_internal(addr)
     }
 
-    // Wrapper for memory write functionality
+    /// Wrapper for memory write functionality
+    ///
+    /// Contains restrictions on what addresses can be written to, and deals with memory mapped regions
     pub fn write_byte(&mut self, addr: Word, value: Byte) {
         // this is read only memory and should not be written to
         if addr < 0x8000 {
@@ -118,7 +120,7 @@ impl Memory {
         self.mem[addr as usize] = value;
     }
 
-    ///Function to write a word
+    /// Function to write a word
     pub fn write_word(&mut self, addr: Word, value: Word) {
         let l = value & 0xff;
         let h = (value >> 8) & 0xff;
@@ -126,14 +128,14 @@ impl Memory {
         self.write_byte(addr.wrapping_add(1), h as Byte);
     }
 
-    ///Function to read a word
+    /// Function to read a word
     pub fn read_word(&self, addr: Word) -> Word {
         let l = self.read_byte(addr) as Word;
         let h = self.read_byte(addr.wrapping_add(1)) as Word;
         h << 8 | l
     }
 
-    ///Wrapper for forced memory reading
+    /// Wrapper for forced memory reading
     ///
     /// Be careful as there are no bounds on providing the wrong mem index
     pub fn read_byte_forced(&self, addr: Word) -> Byte {
@@ -256,7 +258,7 @@ impl Memory {
 
     /// Function for setting ram to requred startup values
     ///
-    /// Its pretty messy
+    /// Its pretty messy but ripped straight from most gameboy dev docs
     pub fn ram_startup(&mut self) {
         self.mem[0xFF05] = 0x00;
         self.mem[0xFF06] = 0x00;
@@ -410,7 +412,7 @@ impl Memory {
         }
     }
 
-    pub fn get_color(&self, color_num: Byte, addr: Word) -> Color {
+    pub fn get_color(&self, color_num: Byte, addr: Word) -> Result<Color, Error> {
         let palette = self.read_byte(addr);
 
         let hi;
@@ -433,20 +435,18 @@ impl Memory {
                 hi = 7;
                 lo = 6
             }
-            _ => {
-                panic!("Color number invalid")
-            } // this should not be possible
+            _ => return Err(Error::ColorReadError), // this should not be possible
         }
 
         let color = (((palette & (1 << hi)) >> hi) << 1) | ((palette & (1 << lo)) >> lo);
 
-        match color {
+        Ok(match color {
             0 => Color::White,
             1 => Color::LightGrey,
             2 => Color::DarkGrey,
             3 => Color::Black,
-            _ => panic!("Invalid color found"), // this should not be possible
-        }
+            _ => return Err(Error::ColorReadError), // this should not be possible
+        })
     }
 }
 
@@ -638,10 +638,19 @@ mod test {
         let mut mem = Memory::new();
         mem.write_byte_forced(0xFF47, 0xE4); // 1110_0100
 
-        assert_eq!(mem.get_color(0, 0xFF47), Color::White);
-        assert_eq!(mem.get_color(1, 0xFF47), Color::LightGrey);
-        assert_eq!(mem.get_color(2, 0xFF47), Color::DarkGrey);
-        assert_eq!(mem.get_color(3, 0xFF47), Color::Black);
+        assert_eq!(mem.get_color(0, 0xFF47), Ok(Color::White));
+        assert_eq!(mem.get_color(1, 0xFF47), Ok(Color::LightGrey));
+        assert_eq!(mem.get_color(2, 0xFF47), Ok(Color::DarkGrey));
+        assert_eq!(mem.get_color(3, 0xFF47), Ok(Color::Black));
+    }
+
+    #[test]
+    #[timeout(10)]
+    fn test_get_color_errors_on_invalid_color_num() {
+        let mut mem = Memory::new();
+        mem.write_byte_forced(0xFF47, 0xE4);
+
+        assert_eq!(mem.get_color(4, 0xFF47), Err(Error::ColorReadError));
     }
 
     #[test]

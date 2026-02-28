@@ -128,7 +128,7 @@ impl Screen {
             let color_bit = 7 - (x_pos % 8);
             let color_num = (((data2 >> color_bit) & 1) << 1) | ((data1 >> color_bit) & 1);
 
-            let color: Color = mem.get_color(color_num, 0xFF47);
+            let color: Color = mem.get_color(color_num, 0xFF47).unwrap_or(Color::Black);
             let (red, green, blue) = match color {
                 Color::White => (255, 255, 255),
                 Color::LightGrey => (0xCC, 0xCC, 0xCC),
@@ -203,7 +203,7 @@ impl Screen {
                             false => 0xFF48,
                         };
 
-                        let color = mem.get_color(color_num, addr);
+                        let color = mem.get_color(color_num, addr).unwrap_or(Color::Black);
 
                         if color == Color::White {
                             continue;
