@@ -415,28 +415,13 @@ impl Memory {
     pub fn get_color(&self, color_num: Byte, addr: Word) -> Result<Color, Error> {
         let palette = self.read_byte(addr);
 
-        let hi;
-        let lo;
-
-        match color_num {
-            0 => {
-                hi = 1;
-                lo = 0
-            }
-            1 => {
-                hi = 3;
-                lo = 2
-            }
-            2 => {
-                hi = 5;
-                lo = 4
-            }
-            3 => {
-                hi = 7;
-                lo = 6
-            }
+        let (hi, lo) = match color_num {
+            0 => (1, 0),
+            1 => (3, 2),
+            2 => (5, 4),
+            3 => (7, 6),
             _ => return Err(Error::ColorReadError), // this should not be possible
-        }
+        };
 
         let color = (((palette & (1 << hi)) >> hi) << 1) | ((palette & (1 << lo)) >> lo);
 
